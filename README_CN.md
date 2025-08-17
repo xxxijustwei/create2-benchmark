@@ -23,17 +23,17 @@
 
 | Lang           | Runtime | TPS             | op/μs    | Total Time | Performance |
 | -------------- | ------- | --------------- | -------- | ---------- | ----------- |
-| **Rust**       | Native  | 721,936 ops/sec | 1.39 μs  | 6.9s       | **1.00x**   |
-| **Go**         | Native  | 544,751 ops/sec | 1.84 μs  | 9.2s       | 0.75x       |
-| **JavaScript** | Bun     | 36,552 ops/sec  | 27.36 μs | 136.8s     | 0.05x       |
+| **Rust**       | Native  | 713,770 ops/sec | 1.40 μs  | 7.0s       | **1.00x**   |
+| **Go**         | Native  | 539,852 ops/sec | 1.85 μs  | 9.3s       | 0.76x       |
+| **JavaScript** | Bun     | 136,251 ops/sec | 7.34 μs  | 36.7s      | 0.19x       |
 
 ### 性能对比
 
 | 对比       | 速度差异      | 性能优势 |
 | ---------- | ------------- | -------- |
-| Rust vs Go | **快 1.33x**  | 32%      |
-| Rust vs JS | **快 19.76x** | 1876%    |
-| Go vs JS   | **快 14.90x** | 1390%    |
+| Rust vs Go | **快 1.32x**  | 32%      |
+| Rust vs JS | **快 5.24x**  | 424%     |
+| Go vs JS   | **快 3.96x**  | 296%     |
 
 ## 快速开始
 
