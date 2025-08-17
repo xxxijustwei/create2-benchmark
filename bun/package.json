@@ -14,7 +14,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "mitata": "^1.0.34",
-    "viem": "2.33.3"
+    "js-sha3": "^0.9.3",
+    "mitata": "^1.0.34"
   }
 }
