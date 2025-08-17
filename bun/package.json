@@ -1,0 +1,20 @@
+{
+  "name": "bun",
+  "module": "index.ts",
+  "scripts": {
+    "benchmark": "bun src/main.ts",
+    "test": "bun src/test.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "mitata": "^1.0.34",
+    "viem": "2.33.3"
+  }
+}
