@@ -21,21 +21,21 @@ This benchmark was created specifically for the **Pay0** project to optimize add
 
 Performance comparison across 5,000,000 address prediction operations:
 
-| Lang           | Runtime | TPS             | op/μs   | Total Time | Performance |
-| -------------- | ------- | --------------- | ------- | ---------- | ----------- |
-| **Rust**       | Native  | 713,770 ops/sec | 1.40 μs | 7.0s       | **1.00x**   |
-| **Go**         | Native  | 539,852 ops/sec | 1.85 μs | 9.3s       | 0.76x       |
-| **JavaScript** | Bun     | 136,251 ops/sec | 7.34 μs | 36.7s      | 0.19x       |
+| Lang           | Runtime | TPS               | op/μs   | Total Time | Performance |
+| -------------- | ------- | ----------------- | ------- | ---------- | ----------- |
+| **Rust**       | Native  | 1,160,953 ops/sec | 0.86 μs | 4.3s       | **1.00x**   |
+| **Go**         | Native  | 541,455 ops/sec   | 1.85 μs | 9.2s       | 0.47x       |
+| **JavaScript** | Bun     | 135,903 ops/sec   | 7.36 μs | 36.8s      | 0.12x       |
 
 ### Performance Comparison
 
 | Comparison | Speed Difference | Performance Gap |
 | ---------- | ---------------- | --------------- |
-| Rust vs Go | **1.32x**        | 32%             |
-| Rust vs JS | **5.24x**        | 424%            |
-| Go vs Rust | **0.76x**        | -24%            |
-| Go vs JS   | **3.96x**        | 296%            |
-| JS vs Rust | **0.19x**        | -81%            |
+| Rust vs Go | **2.14x**        | 114%            |
+| Rust vs JS | **8.54x**        | 754%            |
+| Go vs Rust | **0.47x**        | -53%            |
+| Go vs JS   | **3.98x**        | 298%            |
+| JS vs Rust | **0.12x**        | -88%            |
 | JS vs Go   | **0.25x**        | -75%            |
 
 ## Quick Start
