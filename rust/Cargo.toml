@@ -9,11 +9,11 @@ path = "src/main.rs"
 
 [dependencies]
 sha3 = "0.10"
-hex = "0.4"
-lazy_static = "1.4"
-once_cell = "1.19"
 
 [profile.release]
-lto = true
-codegen-units = 1
-panic = "abort"
+lto = "fat"           # 最大化链接时优化
+codegen-units = 1     # 单一编译单元，更好的优化
+panic = "abort"       # 减少二进制大小
+opt-level = 3         # 最高优化级别
+strip = true          # 移除符号信息
+overflow-checks = false  # 关闭溢出检查（生产环境慎用）

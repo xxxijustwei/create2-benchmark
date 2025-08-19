@@ -1,19 +1,23 @@
 use sha3::{Digest, Keccak256};
-use std::collections::HashMap;
-use std::sync::Mutex;
-use once_cell::sync::Lazy;
 
-static ADDRESS_CACHE: Lazy<Mutex<HashMap<String, bool>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+// // Minimal Proxy (EIP-1167)
+// 预编译的常量字节数组
 
-// Minimal Proxy (EIP-1167)
-const PREFIX: &str = "3d602d80600a3d3981f3363d3d373d3d3d363d73";
-const SUFFIX: &str = "5af43d82803e903d91602b57fd5bf3ff";
+// 3d602d80600a3d3981f3363d3d373d3d3d363d73
+const PREFIX_BYTES: &[u8] = &[
+    0x3d, 0x60, 0x2d, 0x80, 0x60, 0x0a, 0x3d, 0x39, 0x81, 0xf3,
+    0x36, 0x3d, 0x3d, 0x37, 0x3d, 0x3d, 0x3d, 0x36, 0x3d, 0x73
+];
+// 5af43d82803e903d91602b57fd5bf3ff
+const SUFFIX_BYTES: &[u8] = &[
+    0x5a, 0xf4, 0x3d, 0x82, 0x80, 0x3e, 0x90, 0x3d,
+    0x91, 0x60, 0x2b, 0x57, 0xfd, 0x5b, 0xf3, 0xff
+];
 
 #[derive(Debug)]
 pub enum Create2Error {
     InvalidAddress(String),
     InvalidSalt(String),
-    HexDecodeError(String),
 }
 
 impl std::fmt::Display for Create2Error {
@@ -21,81 +25,65 @@ impl std::fmt::Display for Create2Error {
         match self {
             Create2Error::InvalidAddress(addr) => write!(f, "Invalid address format: {}", addr),
             Create2Error::InvalidSalt(salt) => write!(f, "Invalid salt: {}", salt),
-            Create2Error::HexDecodeError(msg) => write!(f, "Hex decode error: {}", msg),
         }
     }
 }
 
 impl std::error::Error for Create2Error {}
 
-pub fn validate_address(address: &str) -> Result<(), Create2Error> {
-    if let Ok(cache) = ADDRESS_CACHE.lock() {
-        if let Some(&is_valid) = cache.get(address) {
-            return if is_valid {
-                Ok(())
-            } else {
-                Err(Create2Error::InvalidAddress(address.to_string()))
-            };
-        }
+// 查找表优化的hex解码
+const HEX_DECODE_TABLE: [u8; 256] = {
+    let mut table = [0xff; 256];
+    let mut i = b'0';
+    while i <= b'9' {
+        table[i as usize] = i - b'0';
+        i += 1;
     }
+    let mut i = b'a';
+    while i <= b'f' {
+        table[i as usize] = i - b'a' + 10;
+        i += 1;
+    }
+    let mut i = b'A';
+    while i <= b'F' {
+        table[i as usize] = i - b'A' + 10;
+        i += 1;
+    }
+    table
+};
 
+#[inline(always)]
+fn validate_address(address: &str) -> Result<(), Create2Error> {
     if address.len() != 42 || !address.starts_with("0x") {
-        if let Ok(mut cache) = ADDRESS_CACHE.lock() {
-            cache.insert(address.to_string(), false);
-        }
         return Err(Create2Error::InvalidAddress("Invalid address format".to_string()));
-    }
-
-    let hex_part = &address[2..];
-    if !hex_part.bytes().all(|b| b.is_ascii_hexdigit()) {
-        if let Ok(mut cache) = ADDRESS_CACHE.lock() {
-            cache.insert(address.to_string(), false);
-        }
-        return Err(Create2Error::InvalidAddress("Invalid hex characters".to_string()));
-    }
-
-    if let Ok(mut cache) = ADDRESS_CACHE.lock() {
-        cache.insert(address.to_string(), true);
     }
     Ok(())
 }
 
-#[inline]
-fn hex_char_to_byte(c: u8) -> u8 {
-    match c {
-        b'0'..=b'9' => c - b'0',
-        b'a'..=b'f' => c - b'a' + 10,
-        b'A'..=b'F' => c - b'A' + 10,
-        _ => 0,
-    }
-}
-
-fn fast_hex_decode(hex_str: &str) -> Result<Vec<u8>, Create2Error> {
+#[inline(always)]
+fn fast_hex_decode(hex_str: &str, output: &mut [u8]) {
     let hex_bytes = hex_str.as_bytes();
-    if hex_bytes.len() % 2 != 0 {
-        return Err(Create2Error::HexDecodeError("Odd length hex string".to_string()));
+    for i in 0..output.len() {
+        let idx = i * 2;
+        let high = HEX_DECODE_TABLE[hex_bytes[idx] as usize];
+        let low = HEX_DECODE_TABLE[hex_bytes[idx + 1] as usize];
+        output[i] = (high << 4) | low;
     }
-    
-    let mut result = Vec::with_capacity(hex_bytes.len() / 2);
-    for chunk in hex_bytes.chunks_exact(2) {
-        let high = hex_char_to_byte(chunk[0]);
-        let low = hex_char_to_byte(chunk[1]);
-        result.push((high << 4) | low);
-    }
-    Ok(result)
 }
 
-fn fast_hex_encode(bytes: &[u8]) -> String {
-    const HEX_CHARS: &[u8] = b"0123456789abcdef";
-    let mut result = String::with_capacity(bytes.len() * 2);
-    for &byte in bytes {
-        result.push(HEX_CHARS[(byte >> 4) as usize] as char);
-        result.push(HEX_CHARS[(byte & 0xf) as usize] as char);
+const HEX_CHARS: &[u8; 16] = b"0123456789abcdef";
+
+#[inline(always)]
+fn fast_hex_encode(bytes: &[u8], output: &mut [u8]) {
+    for (i, &byte) in bytes.iter().enumerate() {
+        let idx = i * 2;
+        output[idx] = HEX_CHARS[(byte >> 4) as usize];
+        output[idx + 1] = HEX_CHARS[(byte & 0xf) as usize];
     }
-    result
 }
 
-pub fn salt_to_bytes(salt: &str) -> Result<[u8; 32], Create2Error> {
+#[inline(always)]
+fn salt_to_bytes(salt: &str, output: &mut [u8; 32]) -> Result<(), Create2Error> {
     if salt.len() > 32 {
         return Err(Create2Error::InvalidSalt(format!(
             "Salt length should not exceed 32 characters, got {}",
@@ -103,17 +91,10 @@ pub fn salt_to_bytes(salt: &str) -> Result<[u8; 32], Create2Error> {
         )));
     }
 
-    let mut salt_bytes = [0u8; 32];
+    output.fill(0);
     let salt_data = salt.as_bytes();
-    salt_bytes[..salt_data.len()].copy_from_slice(salt_data);
-    Ok(salt_bytes)
-}
-
-#[inline]
-fn keccak256(data: &[u8]) -> [u8; 32] {
-    let mut hasher = Keccak256::new();
-    hasher.update(data);
-    hasher.finalize().into()
+    output[..salt_data.len()].copy_from_slice(salt_data);
+    Ok(())
 }
 
 
@@ -125,43 +106,78 @@ pub fn predict_deterministic_address(
     validate_address(implementation)?;
     validate_address(deployer)?;
 
-    let implementation_hex = &implementation[2..].to_lowercase();
-    let deployer_hex = &deployer[2..].to_lowercase();
-    let salt_hex = fast_hex_encode(&salt_to_bytes(salt)?);
-
-    let mut bytecode = String::with_capacity(256);
-    bytecode.push_str(PREFIX);
-    bytecode.push_str(implementation_hex);
-    bytecode.push_str(SUFFIX);
-    bytecode.push_str(deployer_hex);
-    bytecode.push_str(&salt_hex);
-
-    let first_part_hex = &bytecode[0..110];
-    let first_part = fast_hex_decode(first_part_hex)?;
-    let first_hash = keccak256(&first_part);
-    let first_hash_hex = fast_hex_encode(&first_hash);
+    // 使用栈上的固定大小缓冲区
+    let mut bytecode = [0u8; 140]; // 20 + 20 + 16 + 20 + 32 + 32
+    let mut bytecode_hex = [0u8; 280];
+    let mut salt_bytes = [0u8; 32];
     
-    bytecode.push_str(&first_hash_hex);
-
-    let second_part_hex = &bytecode[110..280];
-    let second_part = fast_hex_decode(second_part_hex)?;
-    let second_hash = keccak256(&second_part);
-
-    let hash_hex = fast_hex_encode(&second_hash);
-    let address_hex = &hash_hex[hash_hex.len() - 40..];
-    let address = format!("0x{}", address_hex);
-
-    Ok(to_checksum_address_from_string(&address))
+    salt_to_bytes(salt, &mut salt_bytes)?;
+    
+    // 构建bytecode
+    let mut pos = 0;
+    
+    // PREFIX
+    bytecode[pos..pos + 20].copy_from_slice(PREFIX_BYTES);
+    pos += 20;
+    
+    // implementation address (去掉0x，转小写)
+    let impl_lower = implementation[2..].to_lowercase();
+    fast_hex_decode(&impl_lower, &mut bytecode[pos..pos + 20]);
+    pos += 20;
+    
+    // SUFFIX
+    bytecode[pos..pos + 16].copy_from_slice(SUFFIX_BYTES);
+    pos += 16;
+    
+    // deployer address (去掉0x，转小写)
+    let depl_lower = deployer[2..].to_lowercase();
+    fast_hex_decode(&depl_lower, &mut bytecode[pos..pos + 20]);
+    pos += 20;
+    
+    // salt
+    bytecode[pos..pos + 32].copy_from_slice(&salt_bytes);
+    
+    // 第一次哈希 - 将前55字节转换为hex
+    fast_hex_encode(&bytecode[0..55], &mut bytecode_hex[0..110]);
+    
+    // 解码hex并计算第一次哈希
+    let mut first_part = [0u8; 55];
+    fast_hex_decode(
+        unsafe { std::str::from_utf8_unchecked(&bytecode_hex[0..110]) },
+        &mut first_part
+    );
+    
+    let first_hash = Keccak256::digest(&first_part);
+    
+    // 构建第二部分的hex
+    fast_hex_encode(&bytecode[55..108], &mut bytecode_hex[110..216]);
+    fast_hex_encode(&first_hash, &mut bytecode_hex[216..280]);
+    
+    // 解码hex并计算第二次哈希
+    let mut second_part = [0u8; 85];
+    fast_hex_decode(
+        unsafe { std::str::from_utf8_unchecked(&bytecode_hex[110..280]) },
+        &mut second_part
+    );
+    
+    let second_hash = Keccak256::digest(&second_part);
+    
+    // 取最后20字节作为地址
+    let mut address_hex = [0u8; 40];
+    fast_hex_encode(&second_hash[12..32], &mut address_hex);
+    
+    let address_str = unsafe { std::str::from_utf8_unchecked(&address_hex) };
+    Ok(to_checksum_address(address_str))
 }
 
-fn to_checksum_address_from_string(address: &str) -> String {
-    let address_lower = address.to_lowercase();
-    let address_hash = keccak256(address_lower[2..].as_bytes());
+#[inline(always)]
+fn to_checksum_address(address: &str) -> String {
+    let address_hash = Keccak256::digest(address.as_bytes());
     
     let mut checksum = String::with_capacity(42);
     checksum.push_str("0x");
     
-    for (i, c) in address_lower[2..].chars().enumerate() {
+    for (i, c) in address.chars().enumerate() {
         if c.is_ascii_digit() {
             checksum.push(c);
         } else {
