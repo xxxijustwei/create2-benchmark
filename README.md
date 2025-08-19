@@ -24,17 +24,17 @@ Performance comparison across 5,000,000 address prediction operations:
 | Lang           | Runtime | TPS               | op/μs   | Total Time | Performance |
 | -------------- | ------- | ----------------- | ------- | ---------- | ----------- |
 | **Rust**       | Native  | 1,160,953 ops/sec | 0.86 μs | 4.3s       | **1.00x**   |
-| **Go**         | Native  | 541,455 ops/sec   | 1.85 μs | 9.2s       | 0.47x       |
+| **Go**         | Native  | 554,353 ops/sec   | 1.80 μs | 9.0s       | 0.48x       |
 | **JavaScript** | Bun     | 135,903 ops/sec   | 7.36 μs | 36.8s      | 0.12x       |
 
 ### Performance Comparison
 
 | Comparison | Speed Difference | Performance Gap |
 | ---------- | ---------------- | --------------- |
-| Rust vs Go | **2.14x**        | 114%            |
+| Rust vs Go | **2.09x**        | 109%            |
 | Rust vs JS | **8.54x**        | 754%            |
-| Go vs Rust | **0.47x**        | -53%            |
-| Go vs JS   | **3.98x**        | 298%            |
+| Go vs Rust | **0.48x**        | -52%            |
+| Go vs JS   | **4.08x**        | 308%            |
 | JS vs Rust | **0.12x**        | -88%            |
 | JS vs Go   | **0.25x**        | -75%            |
 
