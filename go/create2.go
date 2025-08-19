@@ -17,35 +17,28 @@ const (
 )
 
 type Create2 struct {
-	bytecodePrefix []byte
-	bytecodeSuffix []byte
-	
+	bytecodePrefix string
+	bytecodeSuffix string
+
 	addressCache sync.Map
-	
-	bufferPool sync.Pool
 }
 
 func NewCreate2() *Create2 {
 	return &Create2{
-		bytecodePrefix: common.FromHex(MinProxyBytecodePrefix),
-		bytecodeSuffix: common.FromHex(MinProxyBytecodeSuffix),
-		bufferPool: sync.Pool{
-			New: func() interface{} {
-				return make([]byte, 0, 200)
-			},
-		},
+		bytecodePrefix: MinProxyBytecodePrefix,
+		bytecodeSuffix: MinProxyBytecodeSuffix,
 	}
 }
 
 func (c *Create2) isValidAddress(address string) bool {
-	if len(address) != 42 || address[0] != '0' || address[1] != 'x' {
+	if len(address) != 42 || address[0] != '0' || (address[1] != 'x' && address[1] != 'X') {
 		return false
 	}
-	
+
 	if cached, ok := c.addressCache.Load(address); ok {
 		return cached.(bool)
 	}
-	
+
 	for i := 2; i < 42; i++ {
 		ch := address[i]
 		if !((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')) {
@@ -53,7 +46,7 @@ func (c *Create2) isValidAddress(address string) bool {
 			return false
 		}
 	}
-	
+
 	c.addressCache.Store(address, true)
 	return true
 }
@@ -63,10 +56,10 @@ func stringToHex(s string, size int) string {
 	if len(bytes) > size {
 		return ""
 	}
-	
+
 	padded := make([]byte, size)
 	copy(padded, bytes)
-	
+
 	return fmt.Sprintf("%x", padded)
 }
 
@@ -74,38 +67,42 @@ func (c *Create2) PredictDeterministicAddress(implementation, deployer, salt str
 	if !c.isValidAddress(implementation) {
 		return "", fmt.Errorf("无效的实现合约地址: %s", implementation)
 	}
-	
+
 	if !c.isValidAddress(deployer) {
 		return "", fmt.Errorf("无效的部署者地址: %s", deployer)
 	}
-	
+
 	if len(salt) > 32 {
 		return "", errors.New("盐值长度不能超过32个字符")
 	}
-	
-	saltHex := stringToHex(salt, 32)
-	cleanImplementation := strings.ToLower(implementation[2:])
-	cleanDeployer := strings.ToLower(deployer[2:])
-	
-	bytecode := fmt.Sprintf("%s%s%s%s%s", 
-		MinProxyBytecodePrefix, 
-		cleanImplementation, 
-		MinProxyBytecodeSuffix, 
-		cleanDeployer, 
-		saltHex)
-	
-	firstPart := bytecode[:110]
-	firstBytes := common.FromHex("0x" + firstPart)
+
+	// 优化: 使用 strings.Builder 替代 fmt.Sprintf
+	var builder strings.Builder
+	builder.Grow(280) // 预分配容量
+
+	builder.WriteString(c.bytecodePrefix)
+	builder.WriteString(strings.ToLower(implementation[2:]))
+	builder.WriteString(c.bytecodeSuffix)
+	builder.WriteString(strings.ToLower(deployer[2:]))
+	builder.WriteString(stringToHex(salt, 32))
+
+	bytecode := builder.String()
+
+	// 第一次哈希
+	firstBytes := common.FromHex(bytecode[:110])
 	firstHash := crypto.Keccak256(firstBytes)
-	bytecode += fmt.Sprintf("%x", firstHash)
-	
-	secondPart := bytecode[110:280]
-	secondBytes := common.FromHex("0x" + secondPart)
+
+	// 构建完整 bytecode
+	builder.WriteString(fmt.Sprintf("%x", firstHash))
+	fullBytecode := builder.String()
+
+	// 第二次哈希
+	secondBytes := common.FromHex(fullBytecode[110:280])
 	secondHash := crypto.Keccak256(secondBytes)
-	
+
+	// 提取地址
 	hashHex := fmt.Sprintf("%x", secondHash)
 	addressHex := hashHex[len(hashHex)-40:]
-	
 	address := common.HexToAddress("0x" + addressHex)
 	return address.Hex(), nil
 }
