@@ -1,5 +1,7 @@
 use metal::*;
 use std::mem;
+use std::sync::{Arc, Mutex};
+use std::collections::VecDeque;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -16,16 +18,76 @@ pub struct Create2Result {
     pub salt_index: u32,
 }
 
+struct BufferPool {
+    device: Device,
+    salts_buffers: Mutex<VecDeque<Buffer>>,
+    results_buffers: Mutex<VecDeque<Buffer>>,
+    buffer_size: usize,
+}
+
+impl BufferPool {
+    fn new(device: Device, batch_size: usize) -> Self {
+        BufferPool {
+            device,
+            salts_buffers: Mutex::new(VecDeque::new()),
+            results_buffers: Mutex::new(VecDeque::new()),
+            buffer_size: batch_size,
+        }
+    }
+    
+    fn get_salts_buffer(&self) -> Buffer {
+        let mut pool = self.salts_buffers.lock().unwrap();
+        pool.pop_front().unwrap_or_else(|| {
+            let size = (32 * self.buffer_size) as u64;
+            self.device.new_buffer(size, MTLResourceOptions::StorageModeShared)
+        })
+    }
+    
+    fn get_results_buffer(&self) -> Buffer {
+        let mut pool = self.results_buffers.lock().unwrap();
+        pool.pop_front().unwrap_or_else(|| {
+            let size = (mem::size_of::<Create2Result>() * self.buffer_size) as u64;
+            let buffer = self.device.new_buffer(size, MTLResourceOptions::StorageModeShared);
+            // Initialize with zeros
+            unsafe {
+                let ptr = buffer.contents() as *mut u8;
+                std::ptr::write_bytes(ptr, 0, size as usize);
+            }
+            buffer
+        })
+    }
+    
+    fn return_salts_buffer(&self, buffer: Buffer) {
+        let mut pool = self.salts_buffers.lock().unwrap();
+        if pool.len() < 4 {  // Keep max 4 buffers in pool
+            pool.push_back(buffer);
+        }
+    }
+    
+    fn return_results_buffer(&self, buffer: Buffer) {
+        let mut pool = self.results_buffers.lock().unwrap();
+        if pool.len() < 4 {  // Keep max 4 buffers in pool
+            // Clear buffer before returning to pool
+            unsafe {
+                let size = (mem::size_of::<Create2Result>() * self.buffer_size) as u64;
+                let ptr = buffer.contents() as *mut u8;
+                std::ptr::write_bytes(ptr, 0, size as usize);
+            }
+            pool.push_back(buffer);
+        }
+    }
+}
+
 pub struct MetalCompute {
     #[allow(dead_code)]
     device: Device,
     command_queue: CommandQueue,
     pipeline_state: ComputePipelineState,
     params_buffer: Buffer,
-    salts_buffer: Buffer,
-    results_buffer: Buffer,
+    buffer_pool: Arc<BufferPool>,
     #[allow(dead_code)]
     batch_size: usize,
+    max_threads_per_group: usize,
 }
 
 impl MetalCompute {
@@ -35,7 +97,11 @@ impl MetalCompute {
             .ok_or_else(|| "Metal device not found. Ensure you're running on macOS with Metal support.".to_string())?;
         
         println!("Using Metal device: {}", device.name());
-        println!("Max threads per threadgroup: {:?}", device.max_threads_per_threadgroup());
+        let max_threads = device.max_threads_per_threadgroup();
+        println!("Max threads per threadgroup: {:?}", max_threads);
+        
+        // Calculate optimal thread group size (power of 2, max 1024)
+        let max_threads_per_group = (max_threads.width as usize).min(1024);
         
         // Create command queue
         let command_queue = device.new_command_queue();
@@ -59,31 +125,21 @@ impl MetalCompute {
             .new_compute_pipeline_state_with_function(&kernel)
             .map_err(|e| format!("Failed to create compute pipeline: {}", e))?;
         
-        // Allocate buffers
+        // Allocate params buffer (shared across all operations)
         let params_size = mem::size_of::<Create2Params>() as u64;
         let params_buffer = device.new_buffer(params_size, MTLResourceOptions::StorageModeShared);
         
-        // Buffer for salts (32 bytes per salt)
-        let salts_size = (32 * batch_size) as u64;
-        let salts_buffer = device.new_buffer(salts_size, MTLResourceOptions::StorageModeShared);
-        
-        let results_size = (mem::size_of::<Create2Result>() * batch_size) as u64;
-        let results_buffer = device.new_buffer(results_size, MTLResourceOptions::StorageModeShared);
-        
-        // Initialize results buffer with zeros
-        unsafe {
-            let ptr = results_buffer.contents() as *mut u8;
-            std::ptr::write_bytes(ptr, 0, results_size as usize);
-        }
+        // Create buffer pool for reuse
+        let buffer_pool = Arc::new(BufferPool::new(device.clone(), batch_size));
         
         Ok(MetalCompute {
             device,
             command_queue,
             pipeline_state,
             params_buffer,
-            salts_buffer,
-            results_buffer,
+            buffer_pool,
             batch_size,
+            max_threads_per_group,
         })
     }
     
@@ -93,6 +149,10 @@ impl MetalCompute {
         deployer: &str,
         salts: &[String],
     ) -> Result<Vec<(String, u32)>, String> {
+        // Get buffers from pool
+        let salts_buffer = self.buffer_pool.get_salts_buffer();
+        let results_buffer = self.buffer_pool.get_results_buffer();
+        
         // Prepare parameters
         let mut params = Create2Params {
             implementation: [0u8; 40],
@@ -116,7 +176,7 @@ impl MetalCompute {
         
         // Copy salts to buffer
         unsafe {
-            let ptr = self.salts_buffer.contents() as *mut u8;
+            let ptr = salts_buffer.contents() as *mut u8;
             for (i, salt) in salts.iter().enumerate() {
                 let salt_bytes = salt.as_bytes();
                 let offset = i * 32;
@@ -136,18 +196,19 @@ impl MetalCompute {
         // Set pipeline and buffers
         encoder.set_compute_pipeline_state(&self.pipeline_state);
         encoder.set_buffer(0, Some(&self.params_buffer), 0);
-        encoder.set_buffer(1, Some(&self.salts_buffer), 0);
-        encoder.set_buffer(2, Some(&self.results_buffer), 0);
+        encoder.set_buffer(1, Some(&salts_buffer), 0);
+        encoder.set_buffer(2, Some(&results_buffer), 0);
         
-        // Calculate dispatch parameters
+        // Calculate dispatch parameters using optimal thread group size
+        let threads_per_group = self.max_threads_per_group.min(256) as u64;
         let thread_group_size = MTLSize {
-            width: 256,
+            width: threads_per_group,
             height: 1,
             depth: 1,
         };
         
         let thread_groups = MTLSize {
-            width: (salts.len() as u64 + 255) / 256,
+            width: (salts.len() as u64 + threads_per_group - 1) / threads_per_group,
             height: 1,
             depth: 1,
         };
@@ -163,7 +224,7 @@ impl MetalCompute {
         // Read results
         let mut results = Vec::with_capacity(salts.len());
         unsafe {
-            let ptr = self.results_buffer.contents() as *const Create2Result;
+            let ptr = results_buffer.contents() as *const Create2Result;
             let slice = std::slice::from_raw_parts(ptr, salts.len());
             
             for (i, result) in slice.iter().enumerate() {
@@ -174,6 +235,10 @@ impl MetalCompute {
                 results.push((format!("0x{}", address_str), i as u32));
             }
         }
+        
+        // Return buffers to pool
+        self.buffer_pool.return_salts_buffer(salts_buffer);
+        self.buffer_pool.return_results_buffer(results_buffer);
         
         Ok(results)
     }

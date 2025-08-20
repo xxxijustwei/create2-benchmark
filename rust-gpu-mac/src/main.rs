@@ -98,67 +98,26 @@ fn run_gpu_benchmark() -> Result<(), Box<dyn std::error::Error>> {
     }
     
     let total_elapsed = start_time.elapsed();
+    let avg_tps = TOTAL_OPERATIONS as f64 / total_elapsed.as_secs_f64();
+    let us_per_op = total_elapsed.as_micros() as f64 / TOTAL_OPERATIONS as f64;
+    
     println!("\n--------------------------------------------------------------------------------");
     println!("✅ 计算完成! (GPU加速)");
     println!();
     println!("📊 Benchmark 结果:");
     println!("==================================================");
     println!("总操作数:     {}", TOTAL_OPERATIONS);
-    println!("总用时:       {:.1}s", total_elapsed.as_secs_f64());
-    println!("平均TPS:      {:.2} ops/sec", TOTAL_OPERATIONS as f64 / total_elapsed.as_secs_f64());
-    println!("每次操作耗时: {:.2} μs", total_elapsed.as_micros() as f64 / TOTAL_OPERATIONS as f64);
+    println!("总用时:       {}", format_duration(total_elapsed));
+    println!("平均TPS:      {:.2} ops/sec", avg_tps);
+    println!("每次操作耗时: {:.2} μs", us_per_op);
     println!("加速模式:     GPU (Metal)");
     
     Ok(())
 }
 
-fn run_single_test() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Running single test for verification...");
-    let implementation = "0xa84c57e9966df7df79bff42f35c68aae71796f64";
-    let deployer = "0xfe15afcb5b9831b8af5fd984678250e95de8e312";
-    let salt = "test-salt-test";
-
-    let predictor = Create2Predictor::new(true, 1)?;
-    if !predictor.is_gpu_enabled() {
-        eprintln!("❌ GPU不可用，请检查Metal支持");
-        return Err("GPU initialization failed".into());
-    }
-    
-    println!("\n📝 测试参数:");
-    println!("  Implementation: {}", implementation);
-    println!("  Deployer: {}", deployer);
-    println!("  Salt: {}", salt);
-    
-    let salts = vec![salt.to_string()];
-    let gpu_results = predictor.predict_batch_gpu(implementation, deployer, &salts)?;
-    assert_eq!(gpu_results[0], "0x22FBFB2264B9Cd1ADe8ce5013012c817878D783C");
-    println!("\n✅ 结果: {}", gpu_results[0]);
-    
-    Ok(())
-}
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<String> = std::env::args().collect();
-    
-    if args.len() > 1 {
-        match args[1].as_str() {
-            "test" => run_single_test(),
-            "--help" | "-h" => {
-                println!("CREATE2 Benchmark GPU加速版");
-                println!("\n用法:");
-                println!("  cargo run --release        # 运行GPU加速benchmark");
-                println!("  cargo run --release test   # 运行单次测试验证");
-                println!("  cargo run --release --help # 显示帮助");
-                Ok(())
-            }
-            _ => {
-                eprintln!("未知参数: {}", args[1]);
-                eprintln!("使用 --help 查看帮助");
-                Ok(())
-            }
-        }
-    } else {
-        // 默认运行GPU版本
-        run_gpu_benchmark()
+fn main() {
+    if let Err(e) = run_gpu_benchmark() {
+        eprintln!("错误: {}", e);
+        std::process::exit(1);
     }
 }

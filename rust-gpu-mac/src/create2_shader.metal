@@ -165,8 +165,7 @@ kernel void compute_create2_batch(
     }
     
     // Build bytecode
-    uchar bytecode[140];
-    uchar bytecode_hex[280];
+    uchar bytecode[108];  // Actual bytecode size: 20 + 20 + 16 + 20 + 32 = 108
     uint32_t pos_b = 0;
     
     // Add PREFIX
@@ -198,23 +197,18 @@ kernel void compute_create2_batch(
         bytecode[pos_b++] = salt_str[i];
     }
     
-    // First hash - encode first 55 bytes to hex
-    hex_encode(bytecode, bytecode_hex, 55);
-    
-    // Decode hex and compute first hash
-    uchar first_part[55];
-    hex_decode_thread(bytecode_hex, first_part, 55);
-    
+    // First hash - compute directly from bytecode (first 55 bytes)
     uchar first_hash[32];
-    keccak256_thread(first_part, 55, first_hash);
+    keccak256_thread(bytecode, 55, first_hash);
     
-    // Build second part hex
-    hex_encode(bytecode + 55, bytecode_hex + 110, 53);
-    hex_encode(first_hash, bytecode_hex + 216, 32);
-    
-    // Decode hex and compute second hash
+    // Build second part for hashing (53 bytes from bytecode + 32 bytes from first hash)
     uchar second_part[85];
-    hex_decode_thread(bytecode_hex + 110, second_part, 85);
+    for (int i = 0; i < 53; i++) {
+        second_part[i] = bytecode[55 + i];
+    }
+    for (int i = 0; i < 32; i++) {
+        second_part[53 + i] = first_hash[i];
+    }
     
     uchar second_hash[32];
     keccak256_thread(second_part, 85, second_hash);
