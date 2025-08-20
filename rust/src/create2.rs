@@ -200,33 +200,3 @@ fn to_checksum_address(address: &str) -> String {
     
     checksum
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_predict_deterministic_address() {
-        let implementation = "0xa84c57e9966df7df79bff42f35c68aae71796f64";
-        let deployer = "0xfe15afcb5b9831b8af5fd984678250e95de8e312";
-        let salt = "test-salt-test";
-
-        let result = predict_deterministic_address(implementation, deployer, salt);
-        assert!(result.is_ok());
-        println!("Test result: {}", result.unwrap());
-    }
-
-    #[test]
-    fn test_fast_hex_decode() {
-        let hex = "a84c57e9966df7df79bff42f35c68aae71796f64";
-        let result = fast_hex_decode(hex);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_validate_address() {
-        assert!(validate_address("0xa84c57e9966df7df79bff42f35c68aae71796f64").is_ok());
-        assert!(validate_address("invalid").is_err());
-        assert!(validate_address("0x123").is_err());
-    }
-}

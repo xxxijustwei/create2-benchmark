@@ -18,20 +18,32 @@ constant int r[24] = {
     27, 41, 56, 8,  25, 43, 62, 18, 39, 61, 20, 44
 };
 
-// Keccak-f[1600] permutation
+// Optimized Keccak-f[1600] permutation with unrolled loops
 void keccak_f(thread uint64_t state[25]) {
     uint64_t C[5], D[5], B[25];
     
+    #pragma unroll 24
     for (int round = 0; round < 24; round++) {
-        // Theta
-        for (int i = 0; i < 5; i++) {
-            C[i] = state[i] ^ state[i + 5] ^ state[i + 10] ^ state[i + 15] ^ state[i + 20];
-        }
-        for (int i = 0; i < 5; i++) {
-            D[i] = C[(i + 4) % 5] ^ ((C[(i + 1) % 5] << 1) | (C[(i + 1) % 5] >> 63));
-        }
-        for (int i = 0; i < 25; i++) {
-            state[i] ^= D[i % 5];
+        // Theta - unrolled
+        C[0] = state[0] ^ state[5] ^ state[10] ^ state[15] ^ state[20];
+        C[1] = state[1] ^ state[6] ^ state[11] ^ state[16] ^ state[21];
+        C[2] = state[2] ^ state[7] ^ state[12] ^ state[17] ^ state[22];
+        C[3] = state[3] ^ state[8] ^ state[13] ^ state[18] ^ state[23];
+        C[4] = state[4] ^ state[9] ^ state[14] ^ state[19] ^ state[24];
+        
+        D[0] = C[4] ^ ((C[1] << 1) | (C[1] >> 63));
+        D[1] = C[0] ^ ((C[2] << 1) | (C[2] >> 63));
+        D[2] = C[1] ^ ((C[3] << 1) | (C[3] >> 63));
+        D[3] = C[2] ^ ((C[4] << 1) | (C[4] >> 63));
+        D[4] = C[3] ^ ((C[0] << 1) | (C[0] >> 63));
+        
+        #pragma unroll 5
+        for (int i = 0; i < 25; i += 5) {
+            state[i] ^= D[0];
+            state[i+1] ^= D[1];
+            state[i+2] ^= D[2];
+            state[i+3] ^= D[3];
+            state[i+4] ^= D[4];
         }
         
         // Rho and Pi
@@ -45,15 +57,15 @@ void keccak_f(thread uint64_t state[25]) {
             y = (2 * temp + 3 * y) % 5;
         }
         
-        // Chi
+        // Chi - unrolled
+        #pragma unroll 5
         for (int j = 0; j < 25; j += 5) {
-            uint64_t T[5];
-            for (int i = 0; i < 5; i++) {
-                T[i] = B[j + i];
-            }
-            for (int i = 0; i < 5; i++) {
-                state[j + i] = T[i] ^ ((~T[(i + 1) % 5]) & T[(i + 2) % 5]);
-            }
+            uint64_t T0 = B[j], T1 = B[j+1], T2 = B[j+2], T3 = B[j+3], T4 = B[j+4];
+            state[j] = T0 ^ ((~T1) & T2);
+            state[j+1] = T1 ^ ((~T2) & T3);
+            state[j+2] = T2 ^ ((~T3) & T4);
+            state[j+3] = T3 ^ ((~T4) & T0);
+            state[j+4] = T4 ^ ((~T0) & T1);
         }
         
         // Iota
@@ -61,8 +73,8 @@ void keccak_f(thread uint64_t state[25]) {
     }
 }
 
-// Keccak256 hash function for thread local data
-void keccak256_thread(const thread uchar* input, uint32_t input_len, thread uchar* output) {
+// Optimized Keccak256 hash function with simd hints
+inline void keccak256_thread(const thread uchar* input, uint32_t input_len, thread uchar* output) {
     uint64_t state[25] = {0};
     thread uchar* state_bytes = (thread uchar*)state;
     
@@ -97,18 +109,17 @@ void keccak256_thread(const thread uchar* input, uint32_t input_len, thread ucha
     }
 }
 
-// Helper function to convert hex character to value
-uchar hex_to_value(uchar c) {
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-    return 0;
+// Optimized hex character to value conversion
+inline uchar hex_to_value(uchar c) {
+    return (c <= '9') ? (c - '0') : ((c & 0xDF) - 'A' + 10);
 }
 
-// Helper function to decode hex string from device memory
-void hex_decode_device(const device uchar* hex, thread uchar* bytes, uint32_t len) {
+// Optimized hex decode with vectorization hints
+inline void hex_decode_device(const device uchar* hex, thread uchar* bytes, uint32_t len) {
+    #pragma unroll 4
     for (uint32_t i = 0; i < len; i++) {
-        bytes[i] = (hex_to_value(hex[i * 2]) << 4) | hex_to_value(hex[i * 2 + 1]);
+        uint32_t idx = i * 2;
+        bytes[i] = (hex_to_value(hex[idx]) << 4) | hex_to_value(hex[idx + 1]);
     }
 }
 
@@ -119,12 +130,16 @@ void hex_decode_thread(const thread uchar* hex, thread uchar* bytes, uint32_t le
     }
 }
 
-// Helper function to encode bytes to hex
-void hex_encode(const thread uchar* bytes, thread uchar* hex, uint32_t len) {
-    const char hex_chars[] = "0123456789abcdef";
+// Optimized hex encode with inline conversion
+inline void hex_encode(const thread uchar* bytes, thread uchar* hex, uint32_t len) {
+    #pragma unroll 4
     for (uint32_t i = 0; i < len; i++) {
-        hex[i * 2] = hex_chars[bytes[i] >> 4];
-        hex[i * 2 + 1] = hex_chars[bytes[i] & 0x0f];
+        uchar b = bytes[i];
+        uint32_t idx = i * 2;
+        uchar high = b >> 4;
+        uchar low = b & 0x0f;
+        hex[idx] = (high < 10) ? ('0' + high) : ('a' + high - 10);
+        hex[idx + 1] = (low < 10) ? ('0' + low) : ('a' + low - 10);
     }
 }
 

@@ -59,20 +59,15 @@ impl BufferPool {
     
     fn return_salts_buffer(&self, buffer: Buffer) {
         let mut pool = self.salts_buffers.lock().unwrap();
-        if pool.len() < 4 {  // Keep max 4 buffers in pool
+        if pool.len() < 8 {  // Increase pool size for better concurrency
             pool.push_back(buffer);
         }
     }
     
     fn return_results_buffer(&self, buffer: Buffer) {
         let mut pool = self.results_buffers.lock().unwrap();
-        if pool.len() < 4 {  // Keep max 4 buffers in pool
-            // Clear buffer before returning to pool
-            unsafe {
-                let size = (mem::size_of::<Create2Result>() * self.buffer_size) as u64;
-                let ptr = buffer.contents() as *mut u8;
-                std::ptr::write_bytes(ptr, 0, size as usize);
-            }
+        if pool.len() < 8 {  // Increase pool size for better concurrency
+            // Skip clearing for performance - will be overwritten anyway
             pool.push_back(buffer);
         }
     }
@@ -100,8 +95,8 @@ impl MetalCompute {
         let max_threads = device.max_threads_per_threadgroup();
         println!("Max threads per threadgroup: {:?}", max_threads);
         
-        // Calculate optimal thread group size (power of 2, max 1024)
-        let max_threads_per_group = (max_threads.width as usize).min(1024);
+        // Use full capacity of M4 Pro GPU
+        let max_threads_per_group = max_threads.width as usize;  // M4 Pro supports 1024
         
         // Create command queue
         let command_queue = device.new_command_queue();
@@ -174,18 +169,25 @@ impl MetalCompute {
             *ptr = params;
         }
         
-        // Copy salts to buffer
+        // Optimized salt copying with memcpy
         unsafe {
             let ptr = salts_buffer.contents() as *mut u8;
+            let base_ptr = ptr;
+            
+            // Process salts in chunks for better cache usage
             for (i, salt) in salts.iter().enumerate() {
                 let salt_bytes = salt.as_bytes();
-                let offset = i * 32;
-                let dest = ptr.add(offset);
-                // Clear the salt buffer
-                std::ptr::write_bytes(dest, 0, 32);
-                // Copy salt bytes
-                let copy_len = salt_bytes.len().min(32);
-                std::ptr::copy_nonoverlapping(salt_bytes.as_ptr(), dest, copy_len);
+                let dest = base_ptr.add(i * 32);
+                
+                // Direct copy without clearing (GPU will read exact bytes needed)
+                if salt_bytes.len() == 32 {
+                    // Fast path for full-length salts
+                    std::ptr::copy_nonoverlapping(salt_bytes.as_ptr(), dest, 32);
+                } else {
+                    // Handle shorter salts
+                    std::ptr::write_bytes(dest, 0, 32);
+                    std::ptr::copy_nonoverlapping(salt_bytes.as_ptr(), dest, salt_bytes.len());
+                }
             }
         }
         
@@ -199,8 +201,16 @@ impl MetalCompute {
         encoder.set_buffer(1, Some(&salts_buffer), 0);
         encoder.set_buffer(2, Some(&results_buffer), 0);
         
-        // Calculate dispatch parameters using optimal thread group size
-        let threads_per_group = self.max_threads_per_group.min(256) as u64;
+        // Optimize thread group size - use larger groups for better GPU utilization
+        let optimal_threads = if salts.len() >= 65536 {
+            1024  // Max threads for large batches
+        } else if salts.len() >= 16384 {
+            512   // Medium batches
+        } else {
+            256   // Small batches
+        };
+        
+        let threads_per_group = (self.max_threads_per_group.min(optimal_threads)) as u64;
         let thread_group_size = MTLSize {
             width: threads_per_group,
             height: 1,
