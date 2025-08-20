@@ -8,7 +8,7 @@ name = "benchmark-gpu"
 path = "src/main.rs"
 
 [dependencies]
-metal = "0.27"
+metal = "0.32.0"
 objc = "0.2"
 sha3 = "0.10"
 

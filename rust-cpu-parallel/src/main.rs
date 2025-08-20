@@ -27,7 +27,7 @@ fn format_duration(duration: Duration) -> String {
     }
 }
 
-fn run_parallel_benchmark() -> Result<(), Box<dyn std::error::Error>> {
+fn run_benchmark() -> Result<(), Box<dyn std::error::Error>> {
     let predictor = ParallelPredictor::new();
     
     println!("🚀 Rust CREATE2地址预测benchmark (CPU并行版)");
@@ -128,56 +128,12 @@ fn run_single_test() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn show_info() {
-    println!("CREATE2 Benchmark - CPU并行版");
-    println!();
-    println!("系统信息:");
-    println!("  CPU核心数: {}", num_cpus::get());
-    println!("  Rayon线程池: {} 线程", rayon::current_num_threads());
-    println!();
-    println!("优化特性:");
-    println!("  ✅ Rayon并行计算");
-    println!("  ✅ 查找表优化的十六进制编解码");
-    println!("  ✅ 栈上内存分配");
-    println!("  ✅ SIMD自动向量化");
-    println!("  ✅ 分块处理减少内存压力");
-}
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
     
-    if args.len() > 1 {
-        match args[1].as_str() {
-            "test" => run_single_test(),
-            "info" => {
-                show_info();
-                Ok(())
-            }
-            "--help" | "-h" => {
-                println!("CREATE2 Benchmark - CPU并行版");
-                println!();
-                println!("用法:");
-                println!("  cargo run --release        # 运行benchmark");
-                println!("  cargo run --release test   # 运行单次测试");
-                println!("  cargo run --release info   # 显示系统信息");
-                println!("  cargo run --release --help # 显示帮助");
-                Ok(())
-            }
-            _ => {
-                eprintln!("未知参数: {}", args[1]);
-                eprintln!("使用 --help 查看帮助");
-                Ok(())
-            }
-        }
+    if args.len() > 1 && args[1] == "test" {
+        run_single_test()
     } else {
-        run_parallel_benchmark()
-    }
-}
-
-mod num_cpus {
-    pub fn get() -> usize {
-        std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(1)
+        run_benchmark()
     }
 }

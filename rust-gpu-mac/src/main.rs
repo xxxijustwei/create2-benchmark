@@ -28,7 +28,7 @@ fn format_duration(duration: Duration) -> String {
     }
 }
 
-fn run_gpu_benchmark() -> Result<(), Box<dyn std::error::Error>> {
+fn run_benchmark() -> Result<(), Box<dyn std::error::Error>> {
     println!("🚀 Rust CREATE2地址预测benchmark (GPU加速版)");
     println!("总计算量: {} 次", TOTAL_OPERATIONS);
     println!("实现合约: {}", IMPLEMENTATION);
@@ -115,9 +115,37 @@ fn run_gpu_benchmark() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn main() {
-    if let Err(e) = run_gpu_benchmark() {
-        eprintln!("错误: {}", e);
-        std::process::exit(1);
+fn run_single_test() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Running single test for verification...");
+    let implementation = "0xa84c57e9966df7df79bff42f35c68aae71796f64";
+    let deployer = "0xfe15afcb5b9831b8af5fd984678250e95de8e312";
+    let salt = "test-salt-test";
+
+    let predictor = Create2Predictor::new(true, 1)?;
+    if !predictor.is_gpu_enabled() {
+        eprintln!("❌ GPU不可用，请检查Metal支持");
+        return Err("GPU initialization failed".into());
+    }
+    
+    println!("\n📝 测试参数:");
+    println!("  Implementation: {}", implementation);
+    println!("  Deployer: {}", deployer);
+    println!("  Salt: {}", salt);
+    
+    let salts = vec![salt.to_string()];
+    let gpu_results = predictor.predict_batch_gpu(implementation, deployer, &salts)?;
+    assert_eq!(gpu_results[0], "0x22FBFB2264B9Cd1ADe8ce5013012c817878D783C");
+    println!("\n✅ 结果: {}", gpu_results[0]);
+    
+    Ok(())
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args: Vec<String> = std::env::args().collect();
+    
+    if args.len() > 1 && args[1] == "test" {
+        run_single_test()
+    } else {
+        run_benchmark()
     }
 }
