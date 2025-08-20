@@ -1,0 +1,21 @@
+[package]
+name = "create2-benchmark-cpu-parallel"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "benchmark-cpu-parallel"
+path = "src/main.rs"
+
+[dependencies]
+sha3 = "0.10"
+rayon = "1.8"
+crossbeam = "0.8"
+
+[profile.release]
+lto = "fat"           # 最大化链接时优化
+codegen-units = 1     # 单一编译单元，更好的优化
+panic = "abort"       # 减少二进制大小
+opt-level = 3         # 最高优化级别
+strip = true          # 移除符号信息
+overflow-checks = false  # 关闭溢出检查（生产环境慎用）
