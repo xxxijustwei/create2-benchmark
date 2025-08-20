@@ -4,7 +4,7 @@
 
 ### 安装依赖
 ```bash
-cargo update
+make deps
 ```
 
 ### 运行基准测试
@@ -16,6 +16,3 @@ make run
 ```bash
 make test
 ```
-
-## 说明
-该项目使用 Rust 语言实现 CREATE2 地址生成的性能基准测试。

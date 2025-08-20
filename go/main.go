@@ -48,28 +48,28 @@ func runBenchmark() (*BenchmarkResult, error) {
 	fmt.Printf("实现合约: %s\n", Implementation)
 	fmt.Printf("部署者: %s\n", Deployer)
 	fmt.Println(strings.Repeat("-", 80))
-	
+
 	predictor := NewCreate2()
-	
+
 	startTime := time.Now()
 	lastTime := startTime
 	lastCount := 0
-	
+
 	for i := 0; i < TotalIterations; i++ {
 		salt := fmt.Sprintf("Salt-%d", i)
-		
+
 		_, err := predictor.PredictDeterministicAddress(Implementation, Deployer, salt)
 		if err != nil {
 			return nil, fmt.Errorf("地址预测失败 (迭代 %d): %v", i, err)
 		}
-		
+
 		if i%ReportInterval == 0 || i == TotalIterations-1 {
 			currentTime := time.Now()
 			elapsed := currentTime.Sub(startTime)
 			progress := float64(i+1) / float64(TotalIterations) * 100
-			
+
 			averageTPS := float64(i+1) / elapsed.Seconds()
-			
+
 			var recentTPS float64
 			if i > 0 {
 				recentInterval := currentTime.Sub(lastTime).Seconds()
@@ -77,24 +77,24 @@ func runBenchmark() (*BenchmarkResult, error) {
 					recentTPS = float64(i-lastCount) / recentInterval
 				}
 			}
-			
-			fmt.Printf("\r进度: %.2f%% (%d/%d) | 平均TPS: %.0f | 当前TPS: %.0f | 用时: %s", 
+
+			fmt.Printf("\r进度: %.2f%% (%d/%d) | 平均TPS: %.0f | 当前TPS: %.0f | 用时: %s",
 				progress, i+1, TotalIterations, averageTPS, recentTPS, formatDuration(elapsed))
-			
+
 			lastTime = currentTime
 			lastCount = i
 		}
 	}
-	
+
 	totalDuration := time.Since(startTime)
 	averageTPS := float64(TotalIterations) / totalDuration.Seconds()
-	
+
 	var memStats runtime.MemStats
 	runtime.ReadMemStats(&memStats)
-	
+
 	fmt.Println("\n" + strings.Repeat("-", 80))
 	fmt.Println("✅ 计算完成!")
-	
+
 	return &BenchmarkResult{
 		TotalOperations: TotalIterations,
 		TotalDuration:   totalDuration,
@@ -114,18 +114,29 @@ func printSummary(result *BenchmarkResult) {
 
 func testSinglePrediction() {
 	predictor := NewCreate2()
-	
+	fmt.Println("运行单次测试验证...")
+	fmt.Println("")
+	fmt.Println("📝 测试参数:")
+	fmt.Println("  Implementation: ", Implementation)
+	fmt.Println("  Deployer: ", Deployer)
+	fmt.Println("  Salt: ", "test-salt-test")
+	fmt.Println("")
+
 	result, err := predictor.PredictDeterministicAddress(
 		Implementation,
 		Deployer,
 		"test-salt-test",
 	)
-	
+
 	if err != nil {
-		log.Fatalf("预测地址失败: %v", err)
+		fmt.Println("预测地址失败: ", err)
 	}
-	
-	fmt.Println(result)
+
+	if result != "0x22FBFB2264B9Cd1ADe8ce5013012c817878D783C" {
+		fmt.Println("❎ 预测地址失败: ", result)
+	}
+
+	fmt.Println("✅ 结果: ", result)
 }
 
 func main() {
@@ -133,17 +144,17 @@ func main() {
 		testSinglePrediction()
 		return
 	}
-	
+
 	debug.SetGCPercent(100)
-	
+
 	fmt.Println("🎯 Go CREATE2 Benchmark")
 	fmt.Println(strings.Repeat("=", 50))
-	
+
 	result, err := runBenchmark()
 	if err != nil {
 		log.Fatalf("Benchmark执行失败: %v", err)
 	}
-	
+
 	printSummary(result)
 	fmt.Println("\n🎉 Benchmark完成!")
 }

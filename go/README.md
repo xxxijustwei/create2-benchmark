@@ -16,6 +16,3 @@ make run
 ```bash
 make test
 ```
-
-## 说明
-该项目使用 Go 语言实现 CREATE2 地址生成的性能基准测试。

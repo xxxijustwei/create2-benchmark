@@ -16,6 +16,3 @@ bun run benchmark
 ```bash
 bun run test
 ```
-
-## 说明
-该项目使用 Bun 运行时执行 CREATE2 地址生成的性能基准测试。

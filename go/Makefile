@@ -7,21 +7,19 @@ all: build
 
 # 构建可执行文件
 build:
-	@echo "🔨 构建程序..."
+	@echo "🔨 构建项目..."
 	go mod tidy
 	go build -ldflags="-s -w" -o bin/create2-benchmark .
 
 # 运行benchmark
 run: build
-	@echo "🚀 运行CREATE2 benchmark..."
+	@echo "🚀 运行基准测试..."
 	./bin/create2-benchmark
 
 # 运行测试
 test:
-	@echo "🧪 运行CREATE2地址预测测试..."
+	@echo "🧪 运行单个测试..."
 	go mod tidy
-	@echo "预测地址: test-salt"
-	@echo -n "结果: "
 	@go run . test
 
 # 清理构建文件
@@ -32,7 +30,7 @@ clean:
 # 显示帮助信息
 help:
 	@echo "可用的命令："
-	@echo "  build - 构建可执行文件"
-	@echo "  run   - 运行CREATE2 benchmark"
-	@echo "  test  - 运行CREATE2地址预测测试"
+	@echo "  build - 构建项目"
+	@echo "  run   - 运行基准测试"
+	@echo "  test  - 运行单个测试"
 	@echo "  clean - 清理构建文件"

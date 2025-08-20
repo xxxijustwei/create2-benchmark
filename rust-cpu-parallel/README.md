@@ -2,8 +2,12 @@
 
 ## 使用方法
 
-### 运行Benchmark
+#### 安装依赖
+```bash
+make deps
+```
 
+#### 运行基准测试
 ```bash
 make run
 ```
