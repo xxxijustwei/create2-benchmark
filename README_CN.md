@@ -21,22 +21,13 @@
 
 5,000,000 次地址预测操作的性能对比：
 
-| Lang           | Runtime | TPS               | op/μs   | Total Time | Performance |
-| -------------- | ------- | ----------------- | ------- | ---------- | ----------- |
-| **Rust**       | Native  | 1,160,953 ops/sec | 0.86 μs | 4.3s       | **1.00x**   |
-| **Go**         | Native  | 554,353 ops/sec   | 1.80 μs | 9.0s       | 0.48x       |
-| **JavaScript** | Bun     | 135,903 ops/sec   | 7.36 μs | 36.8s      | 0.12x       |
-
-### 性能对比
-
-| 对比       | 速度差异     | 性能优势 |
-| ---------- | ------------ | -------- |
-| Rust vs Go | **快 2.09x** | 109%     |
-| Rust vs JS | **快 8.54x** | 754%     |
-| Go vs Rust | **慢 0.48x** | -52%     |
-| Go vs JS   | **快 4.08x** | 308%     |
-| JS vs Rust | **慢 0.12x** | -88%     |
-| JS vs Go   | **慢 0.25x** | -75%     |
+| Lang                  | Runtime | TPS               | op/μs   | Total Time | Performance |
+| --------------------- | ------- | ----------------- | ------- | ---------- | ----------- |
+| **Rust CPU Parallel** | Native  | 4,915,502 ops/sec | 0.20 μs | 1.0s       | **4.23x**   |
+| **Rust GPU (Metal)**  | Native  | 4,424,668 ops/sec | 0.23 μs | 1.1s       | 3.81x       |
+| **Rust**              | Native  | 1,160,953 ops/sec | 0.86 μs | 4.3s       | 1.00x       |
+| **Go**                | Native  | 554,353 ops/sec   | 1.80 μs | 9.0s       | 0.48x       |
+| **JavaScript**        | Bun     | 135,903 ops/sec   | 7.36 μs | 36.8s      | 0.12x       |
 
 ## 快速开始
 
