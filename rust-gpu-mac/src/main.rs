@@ -140,11 +140,102 @@ fn run_single_test() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn find_pay0_addresses_gpu() -> Result<(), Box<dyn std::error::Error>> {
+    println!("🔍 开始搜索以pay0结尾的地址（GPU加速版）...");
+    println!("Implementation: {}", IMPLEMENTATION);
+    println!("Deployer: {}", DEPLOYER);
+    println!("GPU批处理大小: {}", GPU_BATCH_SIZE);
+    println!("按Ctrl+C停止搜索");
+    println!("--------------------------------------------------------------------------------");
+    
+    let predictor = Create2Predictor::new(true, GPU_BATCH_SIZE)?;
+    
+    if !predictor.is_gpu_enabled() {
+        eprintln!("❌ GPU不可用，请检查Metal支持");
+        return Err("GPU initialization failed".into());
+    }
+    
+    let start_time = Instant::now();
+    let mut last_report_time = start_time;
+    let mut total_processed = 0;
+    let mut batch_num = 0;
+    
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    
+    // 预分配缓冲区
+    let mut salts = Vec::with_capacity(GPU_BATCH_SIZE);
+    let hex_chars = b"0123456789abcdef";
+    
+    loop {
+        batch_num += 1;
+        salts.clear();
+        
+        // 更高效的随机salt生成
+        for _ in 0..GPU_BATCH_SIZE {
+            let mut salt = String::with_capacity(32);
+            let mut bytes = [0u8; 16];
+            rng.fill(&mut bytes);
+            
+            // 直接将字节转换为十六进制字符串
+            for byte in bytes.iter() {
+                salt.push(hex_chars[(byte >> 4) as usize] as char);
+                salt.push(hex_chars[(byte & 0x0f) as usize] as char);
+            }
+            salts.push(salt);
+        }
+        
+        // GPU批量计算
+        match predictor.predict_batch_gpu(IMPLEMENTATION, DEPLOYER, &salts) {
+            Ok(results) => {
+                total_processed += results.len();
+                
+                // 检查结果中是否有以pay0结尾的地址
+                for (i, address) in results.iter().enumerate() {
+                    if address.to_lowercase().ends_with("pay0") {
+                        let elapsed = start_time.elapsed();
+                        println!("\n✨ 找到目标地址!");
+                        println!("  Salt: {}", salts[i]);
+                        println!("  Address: {}", address);
+                        println!("  尝试次数: {}", total_processed);
+                        println!("  用时: {}", format_duration(elapsed));
+                        println!("--------------------------------------------------------------------------------");
+                    }
+                }
+                
+                // 每批次都更新进度显示
+                let current_time = Instant::now();
+                let elapsed = current_time.duration_since(start_time);
+                
+                // 只在经过一定时间后才更新显示，避免太频繁
+                if current_time.duration_since(last_report_time).as_millis() >= 100 {
+                    let avg_tps = total_processed as f64 / elapsed.as_secs_f64();
+                    
+                    print!("\r已尝试: {} | 批次: {} | 平均TPS: {:.0} | 用时: {}     ", 
+                        total_processed, batch_num, avg_tps, format_duration(elapsed));
+                    io::stdout().flush().unwrap();
+                    
+                    last_report_time = current_time;
+                }
+            }
+            Err(e) => {
+                eprintln!("\n错误: GPU处理失败 - {}", e);
+                eprintln!("批次: {}, 已处理: {}", batch_num, total_processed);
+                return Err(Box::new(e));
+            }
+        }
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
     
-    if args.len() > 1 && args[1] == "test" {
-        run_single_test()
+    if args.len() > 1 {
+        match args[1].as_str() {
+            "test" => run_single_test(),
+            "find" => find_pay0_addresses_gpu(),
+            _ => run_benchmark(),
+        }
     } else {
         run_benchmark()
     }
