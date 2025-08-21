@@ -130,7 +130,7 @@ fn run_single_test() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn find_pay0_addresses() -> Result<(), Box<dyn std::error::Error>> {
+fn find_address() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 开始搜索以Pay0结尾的地址（并行版）...");
     println!("Implementation: {}", IMPLEMENTATION);
     println!("Deployer: {}", DEPLOYER);
@@ -143,7 +143,6 @@ fn find_pay0_addresses() -> Result<(), Box<dyn std::error::Error>> {
     let last_report_time = Arc::new(std::sync::Mutex::new(Instant::now()));
     let last_report_count = Arc::new(AtomicUsize::new(0));
     
-    // 使用线程池并行搜索
     rayon::scope(|s| {
         for _ in 0..rayon::current_num_threads() {
             let counter = counter.clone();
@@ -156,7 +155,6 @@ fn find_pay0_addresses() -> Result<(), Box<dyn std::error::Error>> {
                 let mut local_count = 0;
                 
                 loop {
-                    // 直接生成32字节的随机十六进制字符串，避免UUID开销
                     let salt: String = (0..32)
                         .map(|_| format!("{:x}", rng.gen::<u8>() & 0x0f))
                         .collect();
@@ -176,12 +174,10 @@ fn find_pay0_addresses() -> Result<(), Box<dyn std::error::Error>> {
                             println!("--------------------------------------------------------------------------------");
                         }
                         
-                        // 每1000次更新一次全局计数器并检查是否需要报告进度
                         if local_count >= 1000 {
                             let total = counter.fetch_add(local_count, Ordering::Relaxed) + local_count;
                             local_count = 0;
                             
-                            // 每10000次或每100ms打印一次进度（类似benchmark）
                             if total % PROGRESS_INTERVAL == 0 {
                                 let now = Instant::now();
                                 let should_report = {

@@ -140,7 +140,7 @@ fn run_single_test() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn find_pay0_addresses_gpu() -> Result<(), Box<dyn std::error::Error>> {
+fn find_address() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 开始搜索以pay0结尾的地址（GPU加速版）...");
     println!("Implementation: {}", IMPLEMENTATION);
     println!("Deployer: {}", DEPLOYER);
@@ -185,12 +185,10 @@ fn find_pay0_addresses_gpu() -> Result<(), Box<dyn std::error::Error>> {
             salts.push(salt);
         }
         
-        // GPU批量计算
         match predictor.predict_batch_gpu(IMPLEMENTATION, DEPLOYER, &salts) {
             Ok(results) => {
                 total_processed += results.len();
                 
-                // 检查结果中是否有以pay0结尾的地址
                 for (i, address) in results.iter().enumerate() {
                     if address.ends_with("001ACE") {
                         let elapsed = start_time.elapsed();
@@ -203,11 +201,9 @@ fn find_pay0_addresses_gpu() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 
-                // 每批次都更新进度显示
                 let current_time = Instant::now();
                 let elapsed = current_time.duration_since(start_time);
                 
-                // 只在经过一定时间后才更新显示，避免太频繁
                 if current_time.duration_since(last_report_time).as_millis() >= 100 {
                     let avg_tps = total_processed as f64 / elapsed.as_secs_f64();
                     
@@ -233,7 +229,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if args.len() > 1 {
         match args[1].as_str() {
             "test" => run_single_test(),
-            "find" => find_pay0_addresses_gpu(),
+            "find" => find_address(),
             _ => run_benchmark(),
         }
     } else {
