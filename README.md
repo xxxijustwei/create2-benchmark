@@ -25,9 +25,9 @@ Performance comparison across 50,000,000 address prediction operations:
 | -------------- | ------------- | ------- | ----------------- | ------- | ---------- | ----------- |
 | **Rust**       | Multi-Thread  | Native  | 8,788,990 ops/sec | 0.11 μs | 5.7s       | **7.79x**   |
 | **Rust**       | GPU (Metal)   | Native  | 4,789,691 ops/sec | 0.21 μs | 10.4s      | 4.25x       |
-| **Rust**       | Single Thread | Native  | 1,127,045 ops/sec | 0.89 μs | 44.4s      | 1.00x       |
-| **Go**         | Single Thread | Native  | 501,770 ops/sec   | 1.99 μs | 99.6s      | 0.45x       |
-| **JavaScript** | Single Thread | Bun     | 127,012 ops/sec   | 7.87 μs | 393.7s     | 0.11x       |
+| **Rust**       | Single-Thread | Native  | 1,127,045 ops/sec | 0.89 μs | 44.4s      | 1.00x       |
+| **Go**         | Single-Thread | Native  | 501,770 ops/sec   | 1.99 μs | 99.6s      | 0.45x       |
+| **JavaScript** | Single-Thread | Bun     | 127,012 ops/sec   | 7.87 μs | 393.7s     | 0.11x       |
 
 ## Quick Start
 
