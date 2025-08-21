@@ -6,12 +6,12 @@ build:
 	@cargo build --release
 
 # 运行基准测试
-run:
+run: build
 	@echo "🚀 运行基准测试..."
 	@cargo run --release
 
 # 运行单个测试
-test:
+test: build
 	@echo "🧪 运行单个测试..."
 	@cargo run --release test
 
