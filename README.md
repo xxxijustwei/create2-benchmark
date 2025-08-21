@@ -6,7 +6,7 @@ A multi-language CREATE2 deterministic address prediction performance benchmark 
 
 ## Project Overview
 
-This benchmark was created specifically for the **Pay0** project to optimize address generation performance when creating wallet addresses with "Pay0" suffix for receiving funds on EVM networks. The benchmark compares CREATE2 address prediction performance across different programming languages and runtime environments.
+This benchmark was created specifically for the **Pay0** project to optimize address generation performance when creating wallet addresses with "001ACE" suffix for receiving funds on EVM networks. The benchmark compares CREATE2 address prediction performance across different programming languages and runtime environments.
 
 ## Test Environment
 
