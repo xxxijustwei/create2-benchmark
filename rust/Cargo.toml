@@ -9,6 +9,7 @@ path = "src/main.rs"
 
 [dependencies]
 sha3 = "0.10"
+rand = "0.8"
 
 [profile.release]
 lto = "fat"           # 最大化链接时优化

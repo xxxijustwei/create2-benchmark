@@ -5,7 +5,7 @@ use create2::Create2Predictor;
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
 
-const TOTAL_OPERATIONS: usize = 10_000_000;
+const TOTAL_OPERATIONS: usize = 50_000_000;
 const IMPLEMENTATION: &str = "0xa84c57e9966df7df79bff42f35c68aae71796f64";
 const DEPLOYER: &str = "0xfe15afcb5b9831b8af5fd984678250e95de8e312";
 const PROGRESS_INTERVAL: usize = 10000;
@@ -59,7 +59,7 @@ fn run_benchmark() -> Result<(), Box<dyn std::error::Error>> {
         let batch_size = std::cmp::min(GPU_BATCH_SIZE, TOTAL_OPERATIONS - processed);
         salts.clear();
         
-        // 使用随机salt生成（与find_address相同的方法）
+        // 使用随机salt生成
         for _ in 0..batch_size {
             let mut salt = String::with_capacity(32);
             let mut bytes = [0u8; 16];

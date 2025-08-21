@@ -4,7 +4,7 @@ use create2::predict_deterministic_address;
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
 
-const TOTAL_OPERATIONS: usize = 5_000_000;
+const TOTAL_OPERATIONS: usize = 50_000_000;
 const IMPLEMENTATION: &str = "0xa84c57e9966df7df79bff42f35c68aae71796f64";
 const DEPLOYER: &str = "0xfe15afcb5b9831b8af5fd984678250e95de8e312";
 const PROGRESS_INTERVAL: usize = 1000;
@@ -33,12 +33,27 @@ fn run_benchmark() -> Result<(), Box<dyn std::error::Error>> {
     println!("部署者: {}", DEPLOYER);
     println!("--------------------------------------------------------------------------------");
 
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    
+    // 预分配缓冲区
+    let hex_chars = b"0123456789abcdef";
+
     let start_time = Instant::now();
     let mut last_report_time = start_time;
     let mut last_report_count = 0;
 
     for i in 0..TOTAL_OPERATIONS {
-        let salt = format!("Salt-{}", i);
+        // 生成随机salt
+        let mut salt = String::with_capacity(32);
+        let mut bytes = [0u8; 16];
+        rng.fill(&mut bytes);
+        
+        // 直接将字节转换为十六进制字符串
+        for byte in bytes.iter() {
+            salt.push(hex_chars[(byte >> 4) as usize] as char);
+            salt.push(hex_chars[(byte & 0x0f) as usize] as char);
+        }
         
         match predict_deterministic_address(IMPLEMENTATION, DEPLOYER, &salt) {
             Ok(_) => {},

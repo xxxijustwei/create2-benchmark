@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-const TOTAL_OPERATIONS: usize = 5_000_000;
+const TOTAL_OPERATIONS: usize = 50_000_000;
 const IMPLEMENTATION: &str = "0xa84c57e9966df7df79bff42f35c68aae71796f64";
 const DEPLOYER: &str = "0xfe15afcb5b9831b8af5fd984678250e95de8e312";
 const PROGRESS_INTERVAL: usize = 10000;
@@ -52,10 +52,20 @@ fn run_benchmark() -> Result<(), Box<dyn std::error::Error>> {
                 let mut rng = rand::thread_rng();
                 let mut local_count = 0;
                 
+                // 预分配缓冲区
+                let hex_chars = b"0123456789abcdef";
+                
                 loop {
-                    let salt: String = (0..32)
-                        .map(|_| format!("{:x}", rng.gen::<u8>() & 0x0f))
-                        .collect();
+                    // 生成随机salt
+                    let mut salt = String::with_capacity(32);
+                    let mut bytes = [0u8; 16];
+                    rng.fill(&mut bytes);
+                    
+                    // 直接将字节转换为十六进制字符串
+                    for byte in bytes.iter() {
+                        salt.push(hex_chars[(byte >> 4) as usize] as char);
+                        salt.push(hex_chars[(byte & 0x0f) as usize] as char);
+                    }
                     
                     if let Ok(_address) = predict_deterministic_address(IMPLEMENTATION, DEPLOYER, &salt) {
                         local_count += 1;
@@ -64,8 +74,16 @@ fn run_benchmark() -> Result<(), Box<dyn std::error::Error>> {
                             let total = counter.fetch_add(local_count, Ordering::Relaxed) + local_count;
                             local_count = 0;
                             
-                            // 检查是否达到总目标
                             if total >= TOTAL_OPERATIONS {
+                                let now = Instant::now();
+                                let elapsed = now.duration_since(start_time);
+                                let avg_tps = total as f64 / elapsed.as_secs_f64();
+                                let percentage = (total.min(TOTAL_OPERATIONS) as f64 / TOTAL_OPERATIONS as f64) * 100.0;
+                                
+                                print!("\r进度: {:.2}% ({}/{}) | 平均TPS: {:.0} | 当前TPS: {:.0} | 用时: {}",
+                                    percentage, total.min(TOTAL_OPERATIONS), TOTAL_OPERATIONS, avg_tps, avg_tps, 
+                                    format_duration(elapsed));
+                                io::stdout().flush().unwrap();
                                 break;
                             }
                             
@@ -177,10 +195,20 @@ fn find_address() -> Result<(), Box<dyn std::error::Error>> {
                 let mut rng = rand::thread_rng();
                 let mut local_count = 0;
                 
+                // 预分配缓冲区
+                let hex_chars = b"0123456789abcdef";
+                
                 loop {
-                    let salt: String = (0..32)
-                        .map(|_| format!("{:x}", rng.gen::<u8>() & 0x0f))
-                        .collect();
+                    // 生成随机salt（与GPU版本相同的优化方法）
+                    let mut salt = String::with_capacity(32);
+                    let mut bytes = [0u8; 16];
+                    rng.fill(&mut bytes);
+                    
+                    // 直接将字节转换为十六进制字符串
+                    for byte in bytes.iter() {
+                        salt.push(hex_chars[(byte >> 4) as usize] as char);
+                        salt.push(hex_chars[(byte & 0x0f) as usize] as char);
+                    }
                     
                     if let Ok(address) = predict_deterministic_address(IMPLEMENTATION, DEPLOYER, &salt) {
                         local_count += 1;
