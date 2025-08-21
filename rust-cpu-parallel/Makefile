@@ -23,6 +23,10 @@ deps:
 	@echo "🔄 更新依赖..."
 	@cargo update
 
+find: build
+	@echo "🔍 运行单次测试验证..."
+	@cargo run --release -- find
+
 # 显示系统信息
 info: build
 	@echo "ℹ️  显示系统信息..."

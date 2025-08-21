@@ -164,7 +164,7 @@ fn find_pay0_addresses() -> Result<(), Box<dyn std::error::Error>> {
                     if let Ok(address) = predict_deterministic_address(IMPLEMENTATION, DEPLOYER, &salt) {
                         local_count += 1;
                         
-                        if address.ends_with("pay0") {
+                        if address.ends_with("001ACE") {
                             let total = counter.fetch_add(local_count, Ordering::Relaxed) + local_count;
                             local_count = 0;
                             let elapsed = start_time.elapsed();

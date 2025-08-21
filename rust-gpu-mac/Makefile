@@ -18,6 +18,10 @@ test: build
 	@echo "🧪 运行单次测试验证..."
 	@cargo run --release -- test
 
+find: build
+	@echo "🔍 运行单次测试验证..."
+	@cargo run --release -- find
+
 # 安装依赖
 deps:
 	@echo "🔄 更新依赖..."

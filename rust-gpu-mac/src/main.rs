@@ -192,7 +192,7 @@ fn find_pay0_addresses_gpu() -> Result<(), Box<dyn std::error::Error>> {
                 
                 // 检查结果中是否有以pay0结尾的地址
                 for (i, address) in results.iter().enumerate() {
-                    if address.to_lowercase().ends_with("pay0") {
+                    if address.ends_with("001ACE") {
                         let elapsed = start_time.elapsed();
                         println!("\n✨ 找到目标地址!");
                         println!("  Salt: {}", salts[i]);
