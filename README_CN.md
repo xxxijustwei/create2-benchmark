@@ -21,13 +21,13 @@
 
 50,000,000 次地址预测操作的性能对比：
 
-| Lang                  | Runtime | TPS (Average)     | μs/op   | Total Time | Performance |
-| --------------------- | ------- | ----------------- | ------- | ---------- | ----------- |
-| **Rust CPU Parallel** | Native  | 8,788,990 ops/sec | 0.11 μs | 5.7s       | **7.79x**   |
-| **Rust GPU (Metal)**  | Native  | 4,789,691 ops/sec | 0.21 μs | 10.4s      | 4.25x       |
-| **Rust**              | Native  | 1,127,045 ops/sec | 0.89 μs | 44.4s      | 1.00x       |
-| **Go**                | Native  | 501,770 ops/sec   | 1.99 μs | 99.6s      | 0.45x       |
-| **JavaScript**        | Bun     | 127,012 ops/sec   | 7.87 μs | 393.7s     | 0.11x       |
+| 语言           | 模式        | 运行时 | TPS (平均值)      | μs/op   | 总耗时 | 性能      |
+| -------------- | ----------- | ------ | ----------------- | ------- | ------ | --------- |
+| **Rust**       | 多线程      | Native | 8,788,990 ops/sec | 0.11 μs | 5.7s   | **7.79x** |
+| **Rust**       | GPU (Metal) | Native | 4,789,691 ops/sec | 0.21 μs | 10.4s  | 4.25x     |
+| **Rust**       | 单线程      | Native | 1,127,045 ops/sec | 0.89 μs | 44.4s  | 1.00x     |
+| **Go**         | 单线程      | Native | 501,770 ops/sec   | 1.99 μs | 99.6s  | 0.45x     |
+| **JavaScript** | 单线程      | Bun    | 127,012 ops/sec   | 7.87 μs | 393.7s | 0.11x     |
 
 ## 快速开始
 
