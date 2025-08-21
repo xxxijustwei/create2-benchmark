@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"os"
@@ -11,7 +13,7 @@ import (
 )
 
 const (
-	TotalIterations = 5000000
+	TotalIterations = 50000000
 	ReportInterval  = 1000
 	Implementation  = "0xa84c57e9966df7df79bff42f35c68aae71796f64"
 	Deployer        = "0xfe15afcb5b9831b8af5fd984678250e95de8e312"
@@ -34,15 +36,6 @@ func formatDuration(d time.Duration) string {
 	return fmt.Sprintf("%dm%.1fs", minutes, remainingSeconds)
 }
 
-func formatMemory(bytes uint64) string {
-	mb := float64(bytes) / 1024 / 1024
-	if mb < 1024 {
-		return fmt.Sprintf("%.1fMB", mb)
-	}
-	gb := mb / 1024
-	return fmt.Sprintf("%.2fGB", gb)
-}
-
 func runBenchmark() (*BenchmarkResult, error) {
 	fmt.Printf("总计算量: %d 次\n", TotalIterations)
 	fmt.Printf("实现合约: %s\n", Implementation)
@@ -56,9 +49,15 @@ func runBenchmark() (*BenchmarkResult, error) {
 	lastCount := 0
 
 	for i := 0; i < TotalIterations; i++ {
-		salt := fmt.Sprintf("Salt-%d", i)
+		// 生成随机salt
+		bytes := make([]byte, 16)
+		_, err := rand.Read(bytes)
+		if err != nil {
+			return nil, fmt.Errorf("生成随机salt失败 (迭代 %d): %v", i, err)
+		}
+		salt := hex.EncodeToString(bytes)
 
-		_, err := predictor.PredictDeterministicAddress(Implementation, Deployer, salt)
+		_, err = predictor.PredictDeterministicAddress(Implementation, Deployer, salt)
 		if err != nil {
 			return nil, fmt.Errorf("地址预测失败 (迭代 %d): %v", i, err)
 		}

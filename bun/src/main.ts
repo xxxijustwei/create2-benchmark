@@ -4,7 +4,7 @@ const implementation = "0xa84c57e9966df7df79bff42f35c68aae71796f64"
 const deployer = "0xfe15afcb5b9831b8af5fd984678250e95de8e312"
 
 const main = async () => {
-  const total = 5000000
+  const total = 50000000
   const reportInterval = 1000
   const startTime = Date.now()
   let lastTime = startTime
@@ -17,11 +17,21 @@ const main = async () => {
   console.log(`部署者: ${deployer}`)
   console.log("-".repeat(80))
   
+  // 预分配十六进制字符
+  const hexChars = '0123456789abcdef'
+  
   for (let i = 0; i < total; i++) {
+    // 生成随机salt（与Rust版本相同的方法）
+    let salt = ''
+    for (let j = 0; j < 16; j++) {
+      const byte = Math.floor(Math.random() * 256)
+      salt += hexChars.charAt(byte >> 4) + hexChars.charAt(byte & 0x0f)
+    }
+    
     predictDeterministicAddress({
       implementation,
       deployer,
-      salt: `Salt-${i}`,
+      salt,
     })
     
     if (i % reportInterval === 0 || i === total - 1) {
