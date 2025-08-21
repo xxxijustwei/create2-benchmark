@@ -19,15 +19,15 @@
 
 ## 基准测试结果
 
-5,000,000 次地址预测操作的性能对比：
+50,000,000 次地址预测操作的性能对比：
 
-| Lang                  | Runtime | TPS               | op/μs   | Total Time | Performance |
+| Lang                  | Runtime | TPS (Average)     | μs/op   | Total Time | Performance |
 | --------------------- | ------- | ----------------- | ------- | ---------- | ----------- |
-| **Rust CPU Parallel** | Native  | 4,915,502 ops/sec | 0.20 μs | 1.0s       | **4.23x**   |
-| **Rust GPU (Metal)**  | Native  | 4,424,668 ops/sec | 0.23 μs | 1.1s       | 3.81x       |
-| **Rust**              | Native  | 1,160,953 ops/sec | 0.86 μs | 4.3s       | 1.00x       |
-| **Go**                | Native  | 554,353 ops/sec   | 1.80 μs | 9.0s       | 0.48x       |
-| **JavaScript**        | Bun     | 135,903 ops/sec   | 7.36 μs | 36.8s      | 0.12x       |
+| **Rust CPU Parallel** | Native  | 8,788,990 ops/sec | 0.11 μs | 5.7s       | **7.79x**   |
+| **Rust GPU (Metal)**  | Native  | 4,789,691 ops/sec | 0.21 μs | 10.4s      | 4.25x       |
+| **Rust**              | Native  | 1,127,045 ops/sec | 0.89 μs | 44.4s      | 1.00x       |
+| **Go**                | Native  | 501,770 ops/sec   | 1.99 μs | 99.6s      | 0.45x       |
+| **JavaScript**        | Bun     | 127,012 ops/sec   | 7.87 μs | 393.7s     | 0.11x       |
 
 ## 快速开始
 
@@ -58,10 +58,10 @@ bun run benchmark
 
 ### 基准测试参数
 
-- **总操作数**: 5,000,000 次地址预测
+- **总操作数**: 50,000,000 次地址预测
 - **实现合约**: `0xa84c57e9966df7df79bff42f35c68aae71796f64`
 - **部署者地址**: `0xfe15afcb5b9831b8af5fd984678250e95de8e312`
-- **Salt 模式**: `Salt-{迭代序号}`
+- **Salt 模式**: 每次迭代使用 32 字符长度的随机十六进制字符串
 
 ### 测量方法论
 
