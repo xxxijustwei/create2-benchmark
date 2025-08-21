@@ -20,12 +20,15 @@ impl std::fmt::Display for Create2Error {
 
 impl std::error::Error for Create2Error {}
 
-// Minimal Proxy (EIP-1167) constants
+// // Minimal Proxy (EIP-1167)
+// 预编译的常量字节数组
+
+// 3d602d80600a3d3981f3363d3d373d3d3d363d73
 const PREFIX_BYTES: &[u8] = &[
     0x3d, 0x60, 0x2d, 0x80, 0x60, 0x0a, 0x3d, 0x39, 0x81, 0xf3,
     0x36, 0x3d, 0x3d, 0x37, 0x3d, 0x3d, 0x3d, 0x36, 0x3d, 0x73
 ];
-
+// 5af43d82803e903d91602b57fd5bf3ff
 const SUFFIX_BYTES: &[u8] = &[
     0x5a, 0xf4, 0x3d, 0x82, 0x80, 0x3e, 0x90, 0x3d,
     0x91, 0x60, 0x2b, 0x57, 0xfd, 0x5b, 0xf3, 0xff
@@ -198,10 +201,12 @@ pub fn predict_deterministic_address(
     Ok(to_checksum_address(address_str))
 }
 
+#[allow(dead_code)]
 pub struct ParallelPredictor {
     thread_count: usize,
 }
 
+#[allow(dead_code)]
 impl ParallelPredictor {
     pub fn new() -> Self {
         ParallelPredictor {
@@ -249,7 +254,6 @@ impl ParallelPredictor {
         results
     }
     
-    #[allow(dead_code)]
     pub fn predict_batch_chunked(
         &self,
         implementation: &str,

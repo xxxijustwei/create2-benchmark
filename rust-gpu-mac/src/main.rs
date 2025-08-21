@@ -5,7 +5,7 @@ use create2::Create2Predictor;
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
 
-const TOTAL_OPERATIONS: usize = 5_000_000;
+const TOTAL_OPERATIONS: usize = 10_000_000;
 const IMPLEMENTATION: &str = "0xa84c57e9966df7df79bff42f35c68aae71796f64";
 const DEPLOYER: &str = "0xfe15afcb5b9831b8af5fd984678250e95de8e312";
 const PROGRESS_INTERVAL: usize = 10000;
@@ -43,18 +43,34 @@ fn run_benchmark() -> Result<(), Box<dyn std::error::Error>> {
         return Err("GPU initialization failed".into());
     }
     
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    
     let start_time = Instant::now();
     let mut last_report_time = start_time;
     let mut last_report_count = 0;
     let mut processed = 0;
     
+    // 预分配缓冲区
+    let mut salts = Vec::with_capacity(GPU_BATCH_SIZE);
+    let hex_chars = b"0123456789abcdef";
+    
     while processed < TOTAL_OPERATIONS {
         let batch_size = std::cmp::min(GPU_BATCH_SIZE, TOTAL_OPERATIONS - processed);
+        salts.clear();
         
-        // Generate salts for this batch
-        let mut salts = Vec::with_capacity(batch_size);
-        for i in 0..batch_size {
-            salts.push(format!("Salt-{}", processed + i));
+        // 使用随机salt生成（与find_address相同的方法）
+        for _ in 0..batch_size {
+            let mut salt = String::with_capacity(32);
+            let mut bytes = [0u8; 16];
+            rng.fill(&mut bytes);
+            
+            // 直接将字节转换为十六进制字符串
+            for byte in bytes.iter() {
+                salt.push(hex_chars[(byte >> 4) as usize] as char);
+                salt.push(hex_chars[(byte & 0x0f) as usize] as char);
+            }
+            salts.push(salt);
         }
         
         match predictor.predict_batch_gpu(IMPLEMENTATION, DEPLOYER, &salts) {
