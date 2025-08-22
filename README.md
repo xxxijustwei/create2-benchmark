@@ -11,7 +11,8 @@ This benchmark was created specifically for the **Pay0** project to optimize add
 ## Test Environment
 
 - **OS**: macOS Sequoia 15.5 arm64
-- **CPU**: Apple M4 Pro (12 cores) @ 4.51 GHz
+- **CPU**: Apple M4 Pro (12) @ 4.51 GHz
+- **GPU**: Apple M4 Pro (16) @ 1.58 GHz
 - **Memory**: 24.00 GiB
 - **Go**: 1.25.0
 - **Rust**: 1.89.0
