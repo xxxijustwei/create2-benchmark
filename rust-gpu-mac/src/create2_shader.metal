@@ -147,6 +147,7 @@ struct Create2Params {
     uchar implementation[40];  // hex string without 0x
     uchar deployer[40];        // hex string without 0x
     uint32_t batch_size;       // number of addresses to compute
+    uint32_t addresses_per_thread; // number of addresses each thread processes
 };
 
 struct Create2Result {
@@ -160,9 +161,14 @@ kernel void compute_create2_batch(
     device Create2Result* results [[buffer(2)]],
     uint gid [[thread_position_in_grid]]
 ) {
-    if (gid >= params->batch_size) return;
+    // Thread coarsening: each thread processes multiple addresses
+    uint32_t addresses_per_thread = params->addresses_per_thread;
+    uint32_t start_idx = gid * addresses_per_thread;
+    uint32_t end_idx = min(start_idx + addresses_per_thread, params->batch_size);
     
-    // Constants
+    if (start_idx >= params->batch_size) return;
+    
+    // Constants - shared across all iterations
     const uchar PREFIX[20] = {
         0x3d, 0x60, 0x2d, 0x80, 0x60, 0x0a, 0x3d, 0x39, 0x81, 0xf3,
         0x36, 0x3d, 0x3d, 0x37, 0x3d, 0x3d, 0x3d, 0x36, 0x3d, 0x73
@@ -172,94 +178,122 @@ kernel void compute_create2_batch(
         0x91, 0x60, 0x2b, 0x57, 0xfd, 0x5b, 0xf3, 0xff
     };
     
-    // Get salt for this thread from the salts buffer
-    uchar salt_str[32] = {0};
-    device const uchar* salt_ptr = salts + (gid * 32);
-    for (int i = 0; i < 32; i++) {
-        salt_str[i] = salt_ptr[i];
-    }
+    // Pre-decode addresses once (reuse across iterations)
+    uchar impl_bytes[20];
+    hex_decode_device(params->implementation, impl_bytes, 20);
     
-    // Build bytecode
-    uchar bytecode[108];  // Actual bytecode size: 20 + 20 + 16 + 20 + 32 = 108
-    uint32_t pos_b = 0;
+    uchar depl_bytes[20];
+    hex_decode_device(params->deployer, depl_bytes, 20);
+    
+    // Pre-build common bytecode parts
+    uchar bytecode_template[76];  // Without salt: 20 + 20 + 16 + 20 = 76
+    uint32_t pos = 0;
     
     // Add PREFIX
     for (int i = 0; i < 20; i++) {
-        bytecode[pos_b++] = PREFIX[i];
+        bytecode_template[pos++] = PREFIX[i];
     }
     
-    // Add implementation address (decode from hex)
-    uchar impl_bytes[20];
-    hex_decode_device(params->implementation, impl_bytes, 20);
+    // Add implementation
     for (int i = 0; i < 20; i++) {
-        bytecode[pos_b++] = impl_bytes[i];
+        bytecode_template[pos++] = impl_bytes[i];
     }
     
     // Add SUFFIX
     for (int i = 0; i < 16; i++) {
-        bytecode[pos_b++] = SUFFIX[i];
+        bytecode_template[pos++] = SUFFIX[i];
     }
     
-    // Add deployer address (decode from hex)
-    uchar depl_bytes[20];
-    hex_decode_device(params->deployer, depl_bytes, 20);
+    // Add deployer
     for (int i = 0; i < 20; i++) {
-        bytecode[pos_b++] = depl_bytes[i];
+        bytecode_template[pos++] = depl_bytes[i];
     }
     
-    // Add salt (32 bytes)
-    for (int i = 0; i < 32; i++) {
-        bytecode[pos_b++] = salt_str[i];
-    }
-    
-    // First hash - compute directly from bytecode (first 55 bytes)
-    uchar first_hash[32];
-    keccak256_thread(bytecode, 55, first_hash);
-    
-    // Build second part for hashing (53 bytes from bytecode + 32 bytes from first hash)
-    uchar second_part[85];
-    for (int i = 0; i < 53; i++) {
-        second_part[i] = bytecode[55 + i];
-    }
-    for (int i = 0; i < 32; i++) {
-        second_part[53 + i] = first_hash[i];
-    }
-    
-    uchar second_hash[32];
-    keccak256_thread(second_part, 85, second_hash);
-    
-    // Take last 20 bytes as address
-    uchar address_bytes[20];
-    for (int i = 0; i < 20; i++) {
-        address_bytes[i] = second_hash[12 + i];
-    }
-    
-    // Convert to checksum address
-    uchar address_hex[40];
-    hex_encode(address_bytes, address_hex, 20);
-    
-    // Compute checksum
-    uchar address_hash[32];
-    keccak256_thread(address_hex, 40, address_hash);
-    
-    // Apply checksum
-    for (int i = 0; i < 40; i++) {
-        uchar c = address_hex[i];
-        if (c >= 'a' && c <= 'f') {
-            uint32_t byte_index = i / 2;
-            uint32_t nibble_index = i % 2;
-            uchar byte_value = address_hash[byte_index];
-            uchar nibble_value = (nibble_index == 0) ? (byte_value >> 4) : (byte_value & 0x0f);
-            
-            if (nibble_value >= 8) {
-                address_hex[i] = c - 32; // Convert to uppercase
+    // Process multiple addresses per thread
+    for (uint32_t idx = start_idx; idx < end_idx; idx++) {
+        // Get salt for this iteration
+        uchar salt_str[32];
+        device const uchar* salt_ptr = salts + (idx * 32);
+        
+        // Vectorized salt copy
+        #pragma unroll 8
+        for (int i = 0; i < 32; i++) {
+            salt_str[i] = salt_ptr[i];
+        }
+        
+        // Build complete bytecode by adding salt to template
+        uchar bytecode[108];
+        
+        // Copy template
+        #pragma unroll 8
+        for (int i = 0; i < 76; i++) {
+            bytecode[i] = bytecode_template[i];
+        }
+        
+        // Add salt
+        #pragma unroll 8
+        for (int i = 0; i < 32; i++) {
+            bytecode[76 + i] = salt_str[i];
+        }
+        
+        // First hash - compute directly from bytecode (first 55 bytes)
+        uchar first_hash[32];
+        keccak256_thread(bytecode, 55, first_hash);
+        
+        // Build second part for hashing
+        uchar second_part[85];
+        
+        // Copy remaining bytecode
+        #pragma unroll 8
+        for (int i = 0; i < 53; i++) {
+            second_part[i] = bytecode[55 + i];
+        }
+        
+        // Add first hash
+        #pragma unroll 8
+        for (int i = 0; i < 32; i++) {
+            second_part[53 + i] = first_hash[i];
+        }
+        
+        uchar second_hash[32];
+        keccak256_thread(second_part, 85, second_hash);
+        
+        // Take last 20 bytes as address
+        uchar address_bytes[20];
+        #pragma unroll 4
+        for (int i = 0; i < 20; i++) {
+            address_bytes[i] = second_hash[12 + i];
+        }
+        
+        // Convert to checksum address
+        uchar address_hex[40];
+        hex_encode(address_bytes, address_hex, 20);
+        
+        // Compute checksum
+        uchar address_hash[32];
+        keccak256_thread(address_hex, 40, address_hash);
+        
+        // Apply checksum
+        #pragma unroll 8
+        for (int i = 0; i < 40; i++) {
+            uchar c = address_hex[i];
+            if (c >= 'a' && c <= 'f') {
+                uint32_t byte_index = i / 2;
+                uint32_t nibble_index = i % 2;
+                uchar byte_value = address_hash[byte_index];
+                uchar nibble_value = (nibble_index == 0) ? (byte_value >> 4) : (byte_value & 0x0f);
+                
+                if (nibble_value >= 8) {
+                    address_hex[i] = c - 32; // Convert to uppercase
+                }
             }
         }
+        
+        // Store result
+        #pragma unroll 8
+        for (int i = 0; i < 40; i++) {
+            results[idx].address[i] = address_hex[i];
+        }
+        results[idx].salt_index = idx;
     }
-    
-    // Store result
-    for (int i = 0; i < 40; i++) {
-        results[gid].address[i] = address_hex[i];
-    }
-    results[gid].salt_index = gid;
 }

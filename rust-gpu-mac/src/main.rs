@@ -9,7 +9,7 @@ const TOTAL_OPERATIONS: usize = 50_000_000;
 const IMPLEMENTATION: &str = "0xa84c57e9966df7df79bff42f35c68aae71796f64";
 const DEPLOYER: &str = "0xfe15afcb5b9831b8af5fd984678250e95de8e312";
 const PROGRESS_INTERVAL: usize = 10000;
-const GPU_BATCH_SIZE: usize = 131072; // Doubled batch size for better GPU utilization
+const GPU_BATCH_SIZE: usize = 262144; // 256K - Quadrupled batch size with thread coarsening
 
 fn format_duration(duration: Duration) -> String {
     let total_secs = duration.as_secs_f64();

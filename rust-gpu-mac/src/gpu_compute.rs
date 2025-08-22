@@ -9,6 +9,7 @@ pub struct Create2Params {
     pub implementation: [u8; 40],
     pub deployer: [u8; 40],
     pub batch_size: u32,
+    pub addresses_per_thread: u32,
 }
 
 #[repr(C, packed)]
@@ -59,14 +60,14 @@ impl BufferPool {
     
     fn return_salts_buffer(&self, buffer: Buffer) {
         let mut pool = self.salts_buffers.lock().unwrap();
-        if pool.len() < 8 {  // Increase pool size for better concurrency
+        if pool.len() < 16 {  // Increased pool size for better concurrency
             pool.push_back(buffer);
         }
     }
     
     fn return_results_buffer(&self, buffer: Buffer) {
         let mut pool = self.results_buffers.lock().unwrap();
-        if pool.len() < 8 {  // Increase pool size for better concurrency
+        if pool.len() < 16 {  // Increased pool size for better concurrency
             // Skip clearing for performance - will be overwritten anyway
             pool.push_back(buffer);
         }
@@ -83,6 +84,7 @@ pub struct MetalCompute {
     #[allow(dead_code)]
     batch_size: usize,
     max_threads_per_group: usize,
+    addresses_per_thread: u32,
 }
 
 impl MetalCompute {
@@ -97,6 +99,9 @@ impl MetalCompute {
         
         // Use full capacity of M4 Pro GPU
         let max_threads_per_group = max_threads.width as usize;  // M4 Pro supports 1024
+        
+        // Thread coarsening: each thread processes 4 addresses for better instruction-level parallelism
+        let addresses_per_thread = 4u32;
         
         // Create command queue
         let command_queue = device.new_command_queue();
@@ -135,6 +140,7 @@ impl MetalCompute {
             buffer_pool,
             batch_size,
             max_threads_per_group,
+            addresses_per_thread,
         })
     }
     
@@ -153,6 +159,7 @@ impl MetalCompute {
             implementation: [0u8; 40],
             deployer: [0u8; 40],
             batch_size: salts.len() as u32,
+            addresses_per_thread: self.addresses_per_thread,
         };
         
         // Copy implementation address (without 0x prefix)
@@ -201,16 +208,21 @@ impl MetalCompute {
         encoder.set_buffer(1, Some(&salts_buffer), 0);
         encoder.set_buffer(2, Some(&results_buffer), 0);
         
-        // Optimize thread group size - use larger groups for better GPU utilization
-        let optimal_threads = if salts.len() >= 65536 {
+        // Optimize thread group size with thread coarsening
+        // Since each thread processes multiple addresses, we need fewer threads
+        let num_threads_needed = ((salts.len() as u32 + self.addresses_per_thread - 1) / self.addresses_per_thread) as usize;
+        
+        let optimal_threads = if num_threads_needed >= 16384 {
             1024  // Max threads for large batches
-        } else if salts.len() >= 16384 {
+        } else if num_threads_needed >= 4096 {
             512   // Medium batches
-        } else {
+        } else if num_threads_needed >= 1024 {
             256   // Small batches
+        } else {
+            64    // Very small batches
         };
         
-        let threads_per_group = (self.max_threads_per_group.min(optimal_threads)) as u64;
+        let threads_per_group = (self.max_threads_per_group.min(optimal_threads).min(num_threads_needed)) as u64;
         let thread_group_size = MTLSize {
             width: threads_per_group,
             height: 1,
@@ -218,7 +230,7 @@ impl MetalCompute {
         };
         
         let thread_groups = MTLSize {
-            width: (salts.len() as u64 + threads_per_group - 1) / threads_per_group,
+            width: (num_threads_needed as u64 + threads_per_group - 1) / threads_per_group,
             height: 1,
             depth: 1,
         };
