@@ -146,26 +146,78 @@ impl MetalCompute {
         })
     }
     
-    pub fn compute_batch_with_options(
+    pub fn compute_batch_gpu_random(
         &self,
         implementation: &str,
         deployer: &str,
-        salts: &[String],
-        use_gpu_random: bool,
+        batch_size: usize,
         random_seed: u32,
     ) -> Result<Vec<(String, u32)>, String> {
         // Get buffers from pool
         let salts_buffer = self.buffer_pool.get_salts_buffer();
         let results_buffer = self.buffer_pool.get_results_buffer();
         
-        // Prepare parameters
+        // Ensure buffers are returned to pool even on error
+        let result = self.compute_batch_gpu_random_internal(
+            implementation,
+            deployer,
+            batch_size,
+            random_seed,
+            &salts_buffer,
+            &results_buffer,
+        );
+        
+        // Always return buffers to pool
+        self.buffer_pool.return_salts_buffer(salts_buffer);
+        self.buffer_pool.return_results_buffer(results_buffer);
+        
+        result
+    }
+    
+    pub fn compute_batch_with_salts(
+        &self,
+        implementation: &str,
+        deployer: &str,
+        salts: &[String],
+    ) -> Result<Vec<(String, u32)>, String> {
+        // Get buffers from pool
+        let salts_buffer = self.buffer_pool.get_salts_buffer();
+        let results_buffer = self.buffer_pool.get_results_buffer();
+        
+        // Ensure buffers are returned to pool even on error
+        let result = self.compute_batch_with_salts_internal(
+            implementation,
+            deployer,
+            salts,
+            &salts_buffer,
+            &results_buffer,
+        );
+        
+        // Always return buffers to pool
+        self.buffer_pool.return_salts_buffer(salts_buffer);
+        self.buffer_pool.return_results_buffer(results_buffer);
+        
+        result
+    }
+    
+    fn compute_batch_gpu_random_internal(
+        &self,
+        implementation: &str,
+        deployer: &str,
+        batch_size: usize,
+        random_seed: u32,
+        salts_buffer: &Buffer,
+        results_buffer: &Buffer,
+    ) -> Result<Vec<(String, u32)>, String> {
+        
+        // Prepare parameters for GPU random generation
         let mut params = Create2Params {
             implementation: [0u8; 40],
             deployer: [0u8; 40],
-            batch_size: salts.len() as u32,
+            batch_size: batch_size as u32,
             addresses_per_thread: self.addresses_per_thread,
             random_seed,
-            use_gpu_random: if use_gpu_random { 1 } else { 0 },
+            use_gpu_random: 1,  // Always use GPU random
         };
         
         // Copy implementation address (without 0x prefix)
@@ -182,26 +234,120 @@ impl MetalCompute {
             *ptr = params;
         }
         
-        // Optimized salt copying with memcpy (only if not using GPU random)
-        if !use_gpu_random {
-            unsafe {
-                let ptr = salts_buffer.contents() as *mut u8;
-                let base_ptr = ptr;
+        // No salt copying needed for GPU random generation
+        
+        // Create command buffer and encoder
+        let command_buffer = self.command_queue.new_command_buffer();
+        let encoder = command_buffer.new_compute_command_encoder();
+        
+        // Set pipeline and buffers
+        encoder.set_compute_pipeline_state(&self.pipeline_state);
+        encoder.set_buffer(0, Some(&self.params_buffer), 0);
+        encoder.set_buffer(1, Some(&salts_buffer), 0);  // Still need to pass buffer even if unused
+        encoder.set_buffer(2, Some(&results_buffer), 0);
+        
+        // Optimize thread group size with thread coarsening
+        let num_threads_needed = ((batch_size as u32 + self.addresses_per_thread - 1) / self.addresses_per_thread) as usize;
+        
+        // Dynamic thread group sizing based on device capability and workload
+        let optimal_threads = match num_threads_needed {
+            n if n >= self.max_threads_per_group * 16 => self.max_threads_per_group,
+            n if n >= self.max_threads_per_group * 4 => self.max_threads_per_group / 2,
+            n if n >= self.max_threads_per_group => self.max_threads_per_group / 4,
+            n if n >= 256 => 256,
+            n if n >= 64 => 64,
+            _ => 32,
+        };
+        
+        let threads_per_group = (self.max_threads_per_group.min(optimal_threads).min(num_threads_needed)) as u64;
+        let thread_group_size = MTLSize {
+            width: threads_per_group,
+            height: 1,
+            depth: 1,
+        };
+        
+        let thread_groups = MTLSize {
+            width: (num_threads_needed as u64 + threads_per_group - 1) / threads_per_group,
+            height: 1,
+            depth: 1,
+        };
+        
+        // Dispatch compute kernel
+        encoder.dispatch_thread_groups(thread_groups, thread_group_size);
+        encoder.end_encoding();
+        
+        // Commit and wait
+        command_buffer.commit();
+        command_buffer.wait_until_completed();
+        
+        // Read results
+        let mut results = Vec::with_capacity(batch_size);
+        unsafe {
+            let ptr = results_buffer.contents() as *const Create2Result;
+            let slice = std::slice::from_raw_parts(ptr, batch_size);
+            
+            for (i, result) in slice.iter().enumerate() {
+                let address_bytes = &result.address[..40];
+                let address_str = std::str::from_utf8(address_bytes)
+                    .map_err(|e| format!("Failed to decode address at index {}: {}", i, e))?;
+                results.push((format!("0x{}", address_str), i as u32));
+            }
+        }
+        
+        Ok(results)
+    }
+    
+    fn compute_batch_with_salts_internal(
+        &self,
+        implementation: &str,
+        deployer: &str,
+        salts: &[String],
+        salts_buffer: &Buffer,
+        results_buffer: &Buffer,
+    ) -> Result<Vec<(String, u32)>, String> {
+        
+        // Prepare parameters for salt-based computation
+        let mut params = Create2Params {
+            implementation: [0u8; 40],
+            deployer: [0u8; 40],
+            batch_size: salts.len() as u32,
+            addresses_per_thread: self.addresses_per_thread,
+            random_seed: 0,  // Not used for salt-based computation
+            use_gpu_random: 0,  // Always use provided salts
+        };
+        
+        // Copy implementation address (without 0x prefix)
+        let impl_bytes = implementation[2..].as_bytes();
+        params.implementation[..impl_bytes.len()].copy_from_slice(impl_bytes);
+        
+        // Copy deployer address (without 0x prefix)
+        let depl_bytes = deployer[2..].as_bytes();
+        params.deployer[..depl_bytes.len()].copy_from_slice(depl_bytes);
+        
+        // Copy params to buffer
+        unsafe {
+            let ptr = self.params_buffer.contents() as *mut Create2Params;
+            *ptr = params;
+        }
+        
+        // Optimized salt copying with memcpy
+        unsafe {
+            let ptr = salts_buffer.contents() as *mut u8;
+            let base_ptr = ptr;
+            
+            // Process salts in chunks for better cache usage
+            for (i, salt) in salts.iter().enumerate() {
+                let salt_bytes = salt.as_bytes();
+                let dest = base_ptr.add(i * 32);
                 
-                // Process salts in chunks for better cache usage
-                for (i, salt) in salts.iter().enumerate() {
-                    let salt_bytes = salt.as_bytes();
-                    let dest = base_ptr.add(i * 32);
-                    
-                    // Direct copy without clearing (GPU will read exact bytes needed)
-                    if salt_bytes.len() == 32 {
-                        // Fast path for full-length salts
-                        std::ptr::copy_nonoverlapping(salt_bytes.as_ptr(), dest, 32);
-                    } else {
-                        // Handle shorter salts
-                        std::ptr::write_bytes(dest, 0, 32);
-                        std::ptr::copy_nonoverlapping(salt_bytes.as_ptr(), dest, salt_bytes.len());
-                    }
+                // Direct copy without clearing (GPU will read exact bytes needed)
+                if salt_bytes.len() == 32 {
+                    // Fast path for full-length salts
+                    std::ptr::copy_nonoverlapping(salt_bytes.as_ptr(), dest, 32);
+                } else {
+                    // Handle shorter salts
+                    std::ptr::write_bytes(dest, 0, 32);
+                    std::ptr::copy_nonoverlapping(salt_bytes.as_ptr(), dest, salt_bytes.len());
                 }
             }
         }
@@ -217,17 +363,16 @@ impl MetalCompute {
         encoder.set_buffer(2, Some(&results_buffer), 0);
         
         // Optimize thread group size with thread coarsening
-        // Since each thread processes multiple addresses, we need fewer threads
         let num_threads_needed = ((salts.len() as u32 + self.addresses_per_thread - 1) / self.addresses_per_thread) as usize;
         
-        let optimal_threads = if num_threads_needed >= 16384 {
-            1024  // Max threads for large batches
-        } else if num_threads_needed >= 4096 {
-            512   // Medium batches
-        } else if num_threads_needed >= 1024 {
-            256   // Small batches
-        } else {
-            64    // Very small batches
+        // Dynamic thread group sizing based on device capability and workload
+        let optimal_threads = match num_threads_needed {
+            n if n >= self.max_threads_per_group * 16 => self.max_threads_per_group,
+            n if n >= self.max_threads_per_group * 4 => self.max_threads_per_group / 2,
+            n if n >= self.max_threads_per_group => self.max_threads_per_group / 4,
+            n if n >= 256 => 256,
+            n if n >= 64 => 64,
+            _ => 32,
         };
         
         let threads_per_group = (self.max_threads_per_group.min(optimal_threads).min(num_threads_needed)) as u64;
@@ -258,17 +403,12 @@ impl MetalCompute {
             let slice = std::slice::from_raw_parts(ptr, salts.len());
             
             for (i, result) in slice.iter().enumerate() {
-                // The address is stored as 40 hex characters
                 let address_bytes = &result.address[..40];
                 let address_str = std::str::from_utf8(address_bytes)
                     .map_err(|e| format!("Failed to decode address at index {}: {}", i, e))?;
                 results.push((format!("0x{}", address_str), i as u32));
             }
         }
-        
-        // Return buffers to pool
-        self.buffer_pool.return_salts_buffer(salts_buffer);
-        self.buffer_pool.return_results_buffer(results_buffer);
         
         Ok(results)
     }
@@ -296,10 +436,7 @@ impl GpuAccelerator {
         let mut rng = rand::thread_rng();
         let random_seed = rng.gen::<u32>();
         
-        // Create dummy salts vector (won't be used but needed for the API)
-        let salts: Vec<String> = vec![String::new(); batch_size];
-        
-        self.compute.compute_batch_with_options(implementation, deployer, &salts, true, random_seed)
+        self.compute.compute_batch_gpu_random(implementation, deployer, batch_size, random_seed)
     }
     
     pub fn process_batch_with_salt(
@@ -308,6 +445,6 @@ impl GpuAccelerator {
         deployer: &str,
         salts: &[String],
     ) -> Result<Vec<(String, u32)>, String> {
-        self.compute.compute_batch_with_options(implementation, deployer, salts, false, 0)
+        self.compute.compute_batch_with_salts(implementation, deployer, salts)
     }
 }
