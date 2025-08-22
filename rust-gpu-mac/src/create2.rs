@@ -43,31 +43,39 @@ impl Create2Predictor {
         }
     }
     
-    pub fn predict_batch_gpu(
+    pub fn predict_batch_address(
+        &self,
+        implementation: &str,
+        deployer: &str,
+        batch_size: usize,
+    ) -> Result<Vec<String>, Create2Error> {
+        if let Some(ref gpu) = self.gpu_accelerator {
+            match gpu.process_batch_gpu_random(implementation, deployer, batch_size) {
+                Ok(results) => {
+                    let addresses: Vec<String> = results.into_iter().map(|(addr, _)| addr).collect();
+                    Ok(addresses)
+                }
+                Err(e) => Err(Create2Error::GpuError(e)),
+            }
+        } else {
+            Err(Create2Error::GpuError("GPU not available".to_string()))
+        }
+    }
+    
+    pub fn predict_batch_with_salt(
         &self,
         implementation: &str,
         deployer: &str,
         salts: &[String],
     ) -> Result<Vec<String>, Create2Error> {
         if let Some(ref gpu) = self.gpu_accelerator {
-            let batch_size = gpu.batch_size();
-            let mut all_results = Vec::with_capacity(salts.len());
-            
-            for batch_start in (0..salts.len()).step_by(batch_size) {
-                let batch_end = std::cmp::min(batch_start + batch_size, salts.len());
-                let batch_salts = &salts[batch_start..batch_end];
-                
-                match gpu.process_batch(implementation, deployer, batch_salts) {
-                    Ok(results) => {
-                        for (address, _) in results {
-                            all_results.push(address);
-                        }
-                    }
-                    Err(e) => return Err(Create2Error::GpuError(e)),
+            match gpu.process_batch_with_salt(implementation, deployer, salts) {
+                Ok(results) => {
+                    let addresses: Vec<String> = results.into_iter().map(|(addr, _)| addr).collect();
+                    Ok(addresses)
                 }
+                Err(e) => Err(Create2Error::GpuError(e)),
             }
-            
-            Ok(all_results)
         } else {
             Err(Create2Error::GpuError("GPU not available".to_string()))
         }

@@ -10,6 +10,8 @@ pub struct Create2Params {
     pub deployer: [u8; 40],
     pub batch_size: u32,
     pub addresses_per_thread: u32,
+    pub random_seed: u32,
+    pub use_gpu_random: u32,
 }
 
 #[repr(C, packed)]
@@ -144,11 +146,13 @@ impl MetalCompute {
         })
     }
     
-    pub fn compute_batch(
+    pub fn compute_batch_with_options(
         &self,
         implementation: &str,
         deployer: &str,
         salts: &[String],
+        use_gpu_random: bool,
+        random_seed: u32,
     ) -> Result<Vec<(String, u32)>, String> {
         // Get buffers from pool
         let salts_buffer = self.buffer_pool.get_salts_buffer();
@@ -160,6 +164,8 @@ impl MetalCompute {
             deployer: [0u8; 40],
             batch_size: salts.len() as u32,
             addresses_per_thread: self.addresses_per_thread,
+            random_seed,
+            use_gpu_random: if use_gpu_random { 1 } else { 0 },
         };
         
         // Copy implementation address (without 0x prefix)
@@ -176,24 +182,26 @@ impl MetalCompute {
             *ptr = params;
         }
         
-        // Optimized salt copying with memcpy
-        unsafe {
-            let ptr = salts_buffer.contents() as *mut u8;
-            let base_ptr = ptr;
-            
-            // Process salts in chunks for better cache usage
-            for (i, salt) in salts.iter().enumerate() {
-                let salt_bytes = salt.as_bytes();
-                let dest = base_ptr.add(i * 32);
+        // Optimized salt copying with memcpy (only if not using GPU random)
+        if !use_gpu_random {
+            unsafe {
+                let ptr = salts_buffer.contents() as *mut u8;
+                let base_ptr = ptr;
                 
-                // Direct copy without clearing (GPU will read exact bytes needed)
-                if salt_bytes.len() == 32 {
-                    // Fast path for full-length salts
-                    std::ptr::copy_nonoverlapping(salt_bytes.as_ptr(), dest, 32);
-                } else {
-                    // Handle shorter salts
-                    std::ptr::write_bytes(dest, 0, 32);
-                    std::ptr::copy_nonoverlapping(salt_bytes.as_ptr(), dest, salt_bytes.len());
+                // Process salts in chunks for better cache usage
+                for (i, salt) in salts.iter().enumerate() {
+                    let salt_bytes = salt.as_bytes();
+                    let dest = base_ptr.add(i * 32);
+                    
+                    // Direct copy without clearing (GPU will read exact bytes needed)
+                    if salt_bytes.len() == 32 {
+                        // Fast path for full-length salts
+                        std::ptr::copy_nonoverlapping(salt_bytes.as_ptr(), dest, 32);
+                    } else {
+                        // Handle shorter salts
+                        std::ptr::write_bytes(dest, 0, 32);
+                        std::ptr::copy_nonoverlapping(salt_bytes.as_ptr(), dest, salt_bytes.len());
+                    }
                 }
             }
         }
@@ -268,7 +276,6 @@ impl MetalCompute {
 
 pub struct GpuAccelerator {
     compute: MetalCompute,
-    batch_size: usize,
 }
 
 impl GpuAccelerator {
@@ -276,20 +283,31 @@ impl GpuAccelerator {
         let compute = MetalCompute::new(batch_size)?;
         Ok(GpuAccelerator {
             compute,
-            batch_size,
         })
     }
     
-    pub fn process_batch(
+    pub fn process_batch_gpu_random(
+        &self,
+        implementation: &str,
+        deployer: &str,
+        batch_size: usize,
+    ) -> Result<Vec<(String, u32)>, String> {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+        let random_seed = rng.gen::<u32>();
+        
+        // Create dummy salts vector (won't be used but needed for the API)
+        let salts: Vec<String> = vec![String::new(); batch_size];
+        
+        self.compute.compute_batch_with_options(implementation, deployer, &salts, true, random_seed)
+    }
+    
+    pub fn process_batch_with_salt(
         &self,
         implementation: &str,
         deployer: &str,
         salts: &[String],
     ) -> Result<Vec<(String, u32)>, String> {
-        self.compute.compute_batch(implementation, deployer, salts)
-    }
-    
-    pub fn batch_size(&self) -> usize {
-        self.batch_size
+        self.compute.compute_batch_with_options(implementation, deployer, salts, false, 0)
     }
 }

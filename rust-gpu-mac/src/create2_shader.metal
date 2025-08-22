@@ -143,11 +143,51 @@ inline void hex_encode(const thread uchar* bytes, thread uchar* hex, uint32_t le
     }
 }
 
+// PCG32 Random Number Generator for GPU
+// Simple, fast, and good quality random numbers
+struct PCGState {
+    uint64_t state;
+    uint64_t inc;
+};
+
+inline uint32_t pcg32_random(thread PCGState* rng) {
+    uint64_t oldstate = rng->state;
+    rng->state = oldstate * 6364136223846793005ULL + rng->inc;
+    uint32_t xorshifted = ((oldstate >> 18u) ^ oldstate) >> 27u;
+    uint32_t rot = oldstate >> 59u;
+    return (xorshifted >> rot) | (xorshifted << ((-rot) & 31));
+}
+
+inline void pcg32_init(thread PCGState* rng, uint64_t seed, uint64_t stream) {
+    rng->state = 0U;
+    rng->inc = (stream << 1u) | 1u;
+    pcg32_random(rng);
+    rng->state += seed;
+    pcg32_random(rng);
+}
+
+// Generate random hex string using GPU RNG
+inline void generate_random_salt(thread PCGState* rng, thread uchar* salt) {
+    const uchar hex_chars[16] = {'0','1','2','3','4','5','6','7','8','9','a','b','c','d','e','f'};
+    
+    // Generate 32 hex characters (16 bytes)
+    for (int i = 0; i < 8; i++) {
+        uint32_t rand = pcg32_random(rng);
+        // Extract 4 bytes from the random number
+        salt[i*4] = hex_chars[(rand >> 28) & 0xF];
+        salt[i*4+1] = hex_chars[(rand >> 24) & 0xF];
+        salt[i*4+2] = hex_chars[(rand >> 20) & 0xF];
+        salt[i*4+3] = hex_chars[(rand >> 16) & 0xF];
+    }
+}
+
 struct Create2Params {
     uchar implementation[40];  // hex string without 0x
     uchar deployer[40];        // hex string without 0x
     uint32_t batch_size;       // number of addresses to compute
     uint32_t addresses_per_thread; // number of addresses each thread processes
+    uint32_t random_seed;      // seed for GPU random number generation
+    uint32_t use_gpu_random;   // 1 to use GPU random, 0 to use provided salts
 };
 
 struct Create2Result {
@@ -159,7 +199,8 @@ kernel void compute_create2_batch(
     device const Create2Params* params [[buffer(0)]],
     device const uchar* salts [[buffer(1)]],  // Array of salts (32 bytes each)
     device Create2Result* results [[buffer(2)]],
-    uint gid [[thread_position_in_grid]]
+    uint gid [[thread_position_in_grid]],
+    uint tid [[thread_index_in_threadgroup]]
 ) {
     // Thread coarsening: each thread processes multiple addresses
     uint32_t addresses_per_thread = params->addresses_per_thread;
@@ -167,6 +208,15 @@ kernel void compute_create2_batch(
     uint32_t end_idx = min(start_idx + addresses_per_thread, params->batch_size);
     
     if (start_idx >= params->batch_size) return;
+    
+    // Initialize GPU RNG if needed
+    PCGState rng;
+    if (params->use_gpu_random == 1) {
+        // Use global thread ID and seed to create unique RNG per thread
+        uint64_t unique_seed = params->random_seed + gid;
+        uint64_t stream = (uint64_t)tid * 1099511628211ULL; // Large prime for stream separation
+        pcg32_init(&rng, unique_seed, stream);
+    }
     
     // Constants - shared across all iterations
     const uchar PREFIX[20] = {
@@ -213,12 +263,19 @@ kernel void compute_create2_batch(
     for (uint32_t idx = start_idx; idx < end_idx; idx++) {
         // Get salt for this iteration
         uchar salt_str[32];
-        device const uchar* salt_ptr = salts + (idx * 32);
         
-        // Vectorized salt copy
-        #pragma unroll 8
-        for (int i = 0; i < 32; i++) {
-            salt_str[i] = salt_ptr[i];
+        if (params->use_gpu_random == 1) {
+            // Generate random salt on GPU
+            generate_random_salt(&rng, salt_str);
+        } else {
+            // Use provided salt
+            device const uchar* salt_ptr = salts + (idx * 32);
+            
+            // Vectorized salt copy
+            #pragma unroll 8
+            for (int i = 0; i < 32; i++) {
+                salt_str[i] = salt_ptr[i];
+            }
         }
         
         // Build complete bytecode by adding salt to template
