@@ -105,7 +105,6 @@ fn run_benchmark() -> Result<(), Box<dyn std::error::Error>> {
     println!("总用时:       {}", format_duration(total_elapsed));
     println!("平均TPS:      {:.2} ops/sec", avg_tps);
     println!("每次操作耗时: {:.2} μs", us_per_op);
-    println!("加速模式:     GPU (Metal) + GPU随机数生成");
     
     Ok(())
 }
