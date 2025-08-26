@@ -154,7 +154,7 @@ fn run_single_test() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn find_address() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 开始搜索以XFFFFF结尾的TRON地址（GPU加速版）...");
+    println!("🔍 开始搜索以 tPay1 结尾的TRON CREATE2地址...");
     println!("Implementation: {}", IMPLEMENTATION);
     println!("Deployer: {}", DEPLOYER);
     println!("GPU批处理大小: {}", GPU_BATCH_SIZE);
@@ -182,7 +182,7 @@ fn find_address() -> Result<(), Box<dyn std::error::Error>> {
                 total_processed += results.len();
                 
                 for address in results.iter() {
-                    if address.ends_with("XFFFFF") {
+                    if address.ends_with("tPay1") {
                         let elapsed = start_time.elapsed();
                         println!("\n✨ 找到目标地址!");
                         println!("  Address: {}", address);

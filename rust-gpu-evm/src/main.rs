@@ -149,7 +149,7 @@ fn run_single_test() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn find_address() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 开始搜索以001ACE结尾的地址（GPU加速版）...");
+    println!("🔍 开始搜索以 eAce1 结尾的EVM CREATE2地址...");
     println!("Implementation: {}", IMPLEMENTATION);
     println!("Deployer: {}", DEPLOYER);
     println!("GPU批处理大小: {}", GPU_BATCH_SIZE);
@@ -177,7 +177,7 @@ fn find_address() -> Result<(), Box<dyn std::error::Error>> {
                 total_processed += results.len();
                 
                 for address in results.iter() {
-                    if address.ends_with("001ACE") {
+                    if address.ends_with("eAce1") {
                         let elapsed = start_time.elapsed();
                         println!("\n✨ 找到目标地址!");
                         println!("  Address: {}", address);

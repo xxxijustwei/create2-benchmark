@@ -172,7 +172,7 @@ fn run_single_test() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn find_address() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 开始搜索以Pay0结尾的地址（并行版）...");
+    println!("🔍 开始搜索以 eAce1 结尾的EVM CREATE2地址...");
     println!("Implementation: {}", IMPLEMENTATION);
     println!("Deployer: {}", DEPLOYER);
     println!("CPU线程数: {}", rayon::current_num_threads());
@@ -213,7 +213,7 @@ fn find_address() -> Result<(), Box<dyn std::error::Error>> {
                     if let Ok(address) = predict_deterministic_address(IMPLEMENTATION, DEPLOYER, &salt) {
                         local_count += 1;
                         
-                        if address.ends_with("001ACE") {
+                        if address.ends_with("eAce1") {
                             let total = counter.fetch_add(local_count, Ordering::Relaxed) + local_count;
                             local_count = 0;
                             let elapsed = start_time.elapsed();
